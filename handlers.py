@@ -10,6 +10,7 @@ from database import save_conversation, get_user_conversations
 from image_processing import generate_image_openai, analyze_image_openai
 from tts import generate_speech
 from utils import anthropic_client
+from performance_metrics import add_image_generation_time, get_average_generation_time
 
 logger = logging.getLogger(__name__)
 
@@ -213,41 +214,36 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     prompt = ' '.join(context.args)
     logger.info(f"User {update.effective_user.id} requested image generation: '{prompt[:50]}...'")
 
-    # Send a "upload_photo" action to indicate the bot is processing
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
 
     try:
-        # Start a background task to keep sending the "upload_photo" action
         async def keep_typing():
             while True:
                 await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
-                await asyncio.sleep(5)  # Refresh every 5 seconds
+                await asyncio.sleep(5)
 
-        # Start the keep_typing task
         typing_task = asyncio.create_task(keep_typing())
 
         try:
+            start_time = time.time()
             image_url = await generate_image_openai(prompt)
-            await update.message.reply_photo(photo=image_url, caption=f"Generated image for: {prompt}")
+            generation_time = time.time() - start_time
+            
+            add_image_generation_time(generation_time)
+            avg_time = get_average_generation_time()
+            
+            await update.message.reply_photo(
+                photo=image_url, 
+                caption=f"Generated image for: {prompt}\n"
+                        f"Generation time: {generation_time:.2f} seconds\n"
+                        f"Average generation time: {avg_time:.2f} seconds"
+            )
         finally:
-            # Ensure the typing indicator is cancelled
             typing_task.cancel()
 
     except Exception as e:
         logger.error(f"Image generation error for user {update.effective_user.id}: {str(e)}")
         await update.message.reply_text(f"An error occurred while generating the image: {str(e)}")
-
-async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Check if there's an image in the message or in the reply
-    if update.message.photo:
-        photo = update.message.photo[-1]
-    elif update.message.reply_to_message and update.message.reply_to_message.photo:
-        photo = update.message.reply_to_message.photo[-1]
-    else:
-        await update.message.reply_text("Please send an image or reply to an image with the /analyze_image command.")
-        return
-
-    logger.info(f"User {update.effective_user.id} requested image analysis")
 
     # Send a "typing" action to indicate the bot is processing
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
