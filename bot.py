@@ -8,6 +8,7 @@ from handlers import (
 )
 from utils import periodic_cache_update, periodic_voice_cache_update
 from database import init_db
+from performance_metrics import init_performance_db
 from datetime import timedelta
 
 # Set up logging
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize the database
 init_db()
+init_performance_db()
 
 def create_application():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()

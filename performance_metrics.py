@@ -27,3 +27,6 @@ def get_average_generation_time():
     if times:
         return mean([t[0] for t in times])
     return None
+
+# Initialize the database when this module is imported
+init_performance_db()
