@@ -245,17 +245,26 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error(f"Image generation error for user {update.effective_user.id}: {str(e)}")
         await update.message.reply_text(f"An error occurred while generating the image: {str(e)}")
 
-    # Send a "typing" action to indicate the bot is processing
+async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Check if there's an image in the message or in the reply
+    if update.message.photo:
+        photo = update.message.photo[-1]
+    elif update.message.reply_to_message and update.message.reply_to_message.photo:
+        photo = update.message.reply_to_message.photo[-1]
+    else:
+        await update.message.reply_text("Please send an image or reply to an image with the /analyze_image command.")
+        return
+
+    logger.info(f"User {update.effective_user.id} requested image analysis")
+
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
     try:
-        # Start a background task to keep sending the "typing" action
         async def keep_typing():
             while True:
                 await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-                await asyncio.sleep(5)  # Refresh every 5 seconds
+                await asyncio.sleep(5)
 
-        # Start the keep_typing task
         typing_task = asyncio.create_task(keep_typing())
 
         try:
@@ -264,7 +273,6 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             analysis = await analyze_image_openai(file_bytes)
             await update.message.reply_text(f"Image analysis:\n\n{analysis}")
         finally:
-            # Ensure the typing indicator is cancelled
             typing_task.cancel()
 
     except Exception as e:
