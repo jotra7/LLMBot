@@ -136,6 +136,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
     model = context.user_data.get('model', DEFAULT_MODEL)
 
+    # Check if the message is in a group chat and mentions the bot
+    if update.message.chat.type != 'private':
+        # Get the bot's username
+        bot = await context.bot.get_me()
+        bot_username = bot.username
+
+        # Check if the message mentions the bot
+        if not f"@{bot_username}" in user_message:
+            return  # Don't respond if the bot isn't mentioned in a group chat
+
+        # Remove the mention from the message
+        user_message = user_message.replace(f"@{bot_username}", "").strip()
+
     logger.info(f"User {user_id} sent message: '{user_message[:50]}...'")
     try:
         response = anthropic_client.messages.create(
@@ -155,6 +168,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as e:
         logger.error(f"Error processing message for user {user_id}: {str(e)}")
         await update.message.reply_text(f"An error occurred: {str(e)}")
+
 
 async def get_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id

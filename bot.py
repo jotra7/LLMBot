@@ -39,7 +39,12 @@ def create_application():
     application.add_handler(CommandHandler("analyze_image", analyze_image))
     application.add_handler(MessageHandler(filters.PHOTO, analyze_image))
     application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # Only respond to messages that are either in private chats or mention the bot
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & (filters.ChatType.PRIVATE | filters.Entity("mention")),
+        handle_message
+    ))
 
     # Schedule the periodic cache updates
     application.job_queue.run_repeating(periodic_cache_update, interval=timedelta(days=1), first=10)
