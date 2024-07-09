@@ -1,6 +1,7 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+from telegram.constants import ChatAction
 from config import DEFAULT_MODEL
 from model_cache import get_models
 from voice_cache import get_voices, get_default_voice
@@ -211,9 +212,26 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     prompt = ' '.join(context.args)
     logger.info(f"User {update.effective_user.id} requested image generation: '{prompt[:50]}...'")
 
+    # Send a "upload_photo" action to indicate the bot is processing
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+
     try:
-        image_url = await generate_image_openai(prompt)
-        await update.message.reply_photo(photo=image_url, caption=f"Generated image for: {prompt}")
+        # Start a background task to keep sending the "upload_photo" action
+        async def keep_typing():
+            while True:
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+                await asyncio.sleep(5)  # Refresh every 5 seconds
+
+        # Start the keep_typing task
+        typing_task = asyncio.create_task(keep_typing())
+
+        try:
+            image_url = await generate_image_openai(prompt)
+            await update.message.reply_photo(photo=image_url, caption=f"Generated image for: {prompt}")
+        finally:
+            # Ensure the typing indicator is cancelled
+            typing_task.cancel()
+
     except Exception as e:
         logger.error(f"Image generation error for user {update.effective_user.id}: {str(e)}")
         await update.message.reply_text(f"An error occurred while generating the image: {str(e)}")
@@ -230,11 +248,28 @@ async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     logger.info(f"User {update.effective_user.id} requested image analysis")
 
+    # Send a "typing" action to indicate the bot is processing
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+
     try:
-        file = await context.bot.get_file(photo.file_id)
-        file_bytes = await file.download_as_bytearray()
-        analysis = await analyze_image_openai(file_bytes)
-        await update.message.reply_text(f"Image analysis:\n\n{analysis}")
+        # Start a background task to keep sending the "typing" action
+        async def keep_typing():
+            while True:
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+                await asyncio.sleep(5)  # Refresh every 5 seconds
+
+        # Start the keep_typing task
+        typing_task = asyncio.create_task(keep_typing())
+
+        try:
+            file = await context.bot.get_file(photo.file_id)
+            file_bytes = await file.download_as_bytearray()
+            analysis = await analyze_image_openai(file_bytes)
+            await update.message.reply_text(f"Image analysis:\n\n{analysis}")
+        finally:
+            # Ensure the typing indicator is cancelled
+            typing_task.cancel()
+
     except Exception as e:
         logger.error(f"Image analysis error for user {update.effective_user.id}: {str(e)}")
         await update.message.reply_text(f"An error occurred while analyzing the image: {str(e)}")
