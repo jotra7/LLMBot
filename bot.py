@@ -1,7 +1,8 @@
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatAction
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 import anthropic
+import asyncio
 from openai import OpenAI
 import requests
 import io
@@ -214,7 +215,20 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     prompt = ' '.join(context.args)
     logger.info(f"User {update.effective_user.id} requested image generation: '{prompt[:50]}...'")
 
+    # Send a "typing" action to indicate the bot is processing
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+
     try:
+        # Start a background task to keep sending the "typing" action
+        async def keep_typing():
+            while True:
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+                await asyncio.sleep(5)  # Refresh every 5 seconds
+
+        # Start the keep_typing task
+        typing_task = asyncio.create_task(keep_typing())
+
+        # Generate the image
         response = openai_client.images.generate(
             model="dall-e-3",
             prompt=prompt,
@@ -223,10 +237,19 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             n=1,
         )
         image_url = response.data[0].url
+
+        # Cancel the typing indicator task
+        typing_task.cancel()
+
+        # Send the generated image
         await update.message.reply_photo(photo=image_url, caption=f"Generated image for: {prompt}")
     except Exception as e:
         logger.error(f"Image generation error for user {update.effective_user.id}: {str(e)}")
         await update.message.reply_text(f"An error occurred while generating the image: {str(e)}")
+    finally:
+        # Ensure the typing indicator is cancelled even if an error occurs
+        if 'typing_task' in locals():
+            typing_task.cancel()
 
 async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message.photo:
