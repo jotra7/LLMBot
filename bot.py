@@ -2,7 +2,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 import anthropic
-import openai
+from openai import OpenAI
 import requests
 import io
 from datetime import timedelta
@@ -19,8 +19,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-openai_client = openai(api_key=OPENAI_API_KEY)
+# Initialize clients
+anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Initialize the database
 init_db()
@@ -174,7 +175,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     logger.info(f"User {user_id} sent message: '{user_message[:50]}...'")
     try:
-        response = client.messages.create(
+        response = anthropic_client.messages.create(
             model=model,
             max_tokens=1000,
             messages=[
@@ -229,7 +230,7 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message.photo:
-        await update.message.reply_text("Please send an image with this command as the caption.")
+        await update.message.reply_text("Please send an image with this command as a caption.")
         return
 
     logger.info(f"User {update.effective_user.id} requested image analysis")
