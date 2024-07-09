@@ -254,8 +254,12 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             typing_task.cancel()
 
 async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not update.message.photo and not update.message.document:
-        await update.message.reply_text("Please send an image with the /analyze_image command as the caption.")
+    if update.message.photo:
+        photo = update.message.photo[-1]
+    elif update.message.document and update.message.document.mime_type.startswith('image'):
+        photo = update.message.document
+    else:
+        await update.message.reply_text("Please send an image or use this command right after sending an image.")
         return
 
     logger.info(f"User {update.effective_user.id} requested image analysis")
@@ -264,25 +268,15 @@ async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
     try:
-        # Get the file, whether it's a photo or a document
-        if update.message.photo:
-            file = await context.bot.get_file(update.message.photo[-1].file_id)
-        else:
-            file = await context.bot.get_file(update.message.document.file_id)
-
-        # Download the file
+        file = await context.bot.get_file(photo.file_id)
         file_bytes = await file.download_as_bytearray()
-
-        # Convert to base64
         base64_image = base64.b64encode(file_bytes).decode('utf-8')
 
-        # Start a background task to keep sending the "typing" action
         async def keep_typing():
             while True:
                 await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-                await asyncio.sleep(5)  # Refresh every 5 seconds
+                await asyncio.sleep(5)
 
-        # Start the keep_typing task
         typing_task = asyncio.create_task(keep_typing())
 
         try:
@@ -307,7 +301,6 @@ async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             analysis = response.choices[0].message.content
             await update.message.reply_text(f"Image analysis:\n\n{analysis}")
         finally:
-            # Ensure the typing indicator is cancelled
             typing_task.cancel()
 
     except Exception as e:
@@ -328,7 +321,8 @@ def create_application():
     application.add_handler(CommandHandler("currentvoice", current_voice))
     application.add_handler(CommandHandler("history", get_history))
     application.add_handler(CommandHandler("generate_image", generate_image))
-    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE | filters.CAPTION & filters.Regex(r'^/analyze_image'), analyze_image))
+    application.add_handler(CommandHandler("analyze_image", analyze_image))
+    application.add_handler(MessageHandler(filters.PHOTO, analyze_image))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
