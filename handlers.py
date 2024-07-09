@@ -45,7 +45,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/currentvoice - Show the currently selected voice\n"
         "/history - Show your recent conversations\n"
         "/generate_image <prompt> - Generate an image based on a text prompt\n"
-        "/analyze_image - Analyze an image (send this command as a caption with an image)"
+        "/analyze_image - Analyze an image (use this command when sending an image or reply to an image with this command)"
     )
     await update.message.reply_text(help_text)
 
@@ -169,6 +169,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error(f"Error processing message for user {user_id}: {str(e)}")
         await update.message.reply_text(f"An error occurred: {str(e)}")
 
+    logger.info(f"User {user_id} sent message: '{user_message[:50]}...'")
+    try:
+        response = anthropic_client.messages.create(
+            model=model,
+            max_tokens=1000,
+            messages=[
+                {"role": "user", "content": user_message}
+            ]
+        )
+
+        assistant_response = response.content[0].text
+        await update.message.reply_text(assistant_response)
+
+        # Save the conversation
+        save_conversation(user_id, user_message, assistant_response)
+
+    except Exception as e:
+        logger.error(f"Error processing message for user {user_id}: {str(e)}")
+        await update.message.reply_text(f"An error occurred: {str(e)}")
+
 
 async def get_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -199,12 +219,13 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(f"An error occurred while generating the image: {str(e)}")
 
 async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Check if there's an image in the message or in the reply
     if update.message.photo:
         photo = update.message.photo[-1]
-    elif update.message.document and update.message.document.mime_type.startswith('image'):
-        photo = update.message.document
+    elif update.message.reply_to_message and update.message.reply_to_message.photo:
+        photo = update.message.reply_to_message.photo[-1]
     else:
-        await update.message.reply_text("Please send an image or use this command right after sending an image.")
+        await update.message.reply_text("Please send an image or reply to an image with the /analyze_image command.")
         return
 
     logger.info(f"User {update.effective_user.id} requested image analysis")

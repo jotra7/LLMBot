@@ -37,7 +37,6 @@ def create_application():
     application.add_handler(CommandHandler("history", get_history))
     application.add_handler(CommandHandler("generate_image", generate_image))
     application.add_handler(CommandHandler("analyze_image", analyze_image))
-    application.add_handler(MessageHandler(filters.PHOTO, analyze_image))
     application.add_handler(CallbackQueryHandler(button_callback))
     
     # Only respond to messages that are either in private chats or mention the bot
