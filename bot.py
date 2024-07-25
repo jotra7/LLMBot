@@ -4,7 +4,8 @@ from config import TELEGRAM_BOT_TOKEN
 from handlers import (
     start, help_command, list_models, set_model, current_model,
     tts_command, list_voices, set_voice, current_voice, get_history,
-    generate_image, analyze_image, button_callback, handle_message
+    generate_image, analyze_image, button_callback, handle_message,
+    set_system_message, get_system_message  
 )
 from utils import periodic_cache_update, periodic_voice_cache_update
 from database import init_db
@@ -39,6 +40,8 @@ def create_application():
     application.add_handler(CommandHandler("history", get_history))
     application.add_handler(CommandHandler("generate_image", generate_image))
     application.add_handler(CommandHandler("analyze_image", analyze_image))
+    application.add_handler(CommandHandler("set_system_message", set_system_message))  # Add this line
+    application.add_handler(CommandHandler("get_system_message", get_system_message))  # Add this line
     application.add_handler(CallbackQueryHandler(button_callback))
     
     # Only respond to messages that are either in private chats or mention the bot

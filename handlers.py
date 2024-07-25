@@ -4,7 +4,7 @@ import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
-from config import DEFAULT_MODEL
+from config import DEFAULT_MODEL, DEFAULT_SYSTEM_MESSAGE
 from model_cache import get_models
 from voice_cache import get_voices, get_default_voice
 from database import save_conversation, get_user_conversations
@@ -49,7 +49,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/currentvoice - Show the currently selected voice\n"
         "/history - Show your recent conversations\n"
         "/generate_image <prompt> - Generate an image based on a text prompt\n"
-        "/analyze_image - Analyze an image (use this command when sending an image or reply to an image with this command)"
+        "/analyze_image - Analyze an image (use this command when sending an image or reply to an image with this command)\n"
+        "/set_system_message <message> - Set a custom system message for the AI\n"
+        "/get_system_message - Show the current system message"
     )
     await update.message.reply_text(help_text)
 
@@ -139,18 +141,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_message = update.message.text
     user_id = update.effective_user.id
     model = context.user_data.get('model', DEFAULT_MODEL)
+    system_message = context.user_data.get('system_message', DEFAULT_SYSTEM_MESSAGE)
 
     # Check if the message is in a group chat and mentions the bot
     if update.message.chat.type != 'private':
-        # Get the bot's username
         bot = await context.bot.get_me()
         bot_username = bot.username
-
-        # Check if the message mentions the bot
         if not f"@{bot_username}" in user_message:
-            return  # Don't respond if the bot isn't mentioned in a group chat
-
-        # Remove the mention from the message
+            return
         user_message = user_message.replace(f"@{bot_username}", "").strip()
 
     logger.info(f"User {user_id} sent message: '{user_message[:50]}...'")
@@ -158,6 +156,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         response = anthropic_client.messages.create(
             model=model,
             max_tokens=1000,
+            system=system_message,
             messages=[
                 {"role": "user", "content": user_message}
             ]
@@ -166,34 +165,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         assistant_response = response.content[0].text
         await update.message.reply_text(assistant_response)
 
-        # Save the conversation
         save_conversation(user_id, user_message, assistant_response)
 
     except Exception as e:
         logger.error(f"Error processing message for user {user_id}: {str(e)}")
         await update.message.reply_text(f"An error occurred: {str(e)}")
 
-    logger.info(f"User {user_id} sent message: '{user_message[:50]}...'")
-    try:
-        response = anthropic_client.messages.create(
-            model=model,
-            max_tokens=1000,
-            messages=[
-                {"role": "user", "content": user_message}
-            ]
-        )
+async def set_system_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not context.args:
+        await update.message.reply_text("Please provide a system message after the /set_system_message command.")
+        return
 
-        assistant_response = response.content[0].text
-        await update.message.reply_text(assistant_response)
+    new_system_message = ' '.join(context.args)
+    context.user_data['system_message'] = new_system_message
+    logger.info(f"User {update.effective_user.id} set new system message: '{new_system_message[:50]}...'")
+    await update.message.reply_text(f"System message updated to: {new_system_message}")
 
-        # Save the conversation
-        save_conversation(user_id, user_message, assistant_response)
-
-    except Exception as e:
-        logger.error(f"Error processing message for user {user_id}: {str(e)}")
-        await update.message.reply_text(f"An error occurred: {str(e)}")
-
-
+async def get_system_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    system_message = context.user_data.get('system_message', DEFAULT_SYSTEM_MESSAGE)
+    logger.info(f"User {update.effective_user.id} requested current system message")
+    await update.message.reply_text(f"Current system message: {system_message}")
+    
 async def get_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     logger.info(f"User {user_id} requested conversation history")

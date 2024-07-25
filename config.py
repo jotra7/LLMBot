@@ -15,3 +15,5 @@ if not TELEGRAM_BOT_TOKEN or not ANTHROPIC_API_KEY:
 
 # Default model updated to the latest available Claude model
 DEFAULT_MODEL = "claude-3-5-sonnet-20240620"
+
+DEFAULT_SYSTEM_MESSAGE = "You are a helpful assistant."
