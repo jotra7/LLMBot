@@ -11,7 +11,7 @@ from database import save_conversation, get_user_conversations, get_all_users, b
 from image_processing import generate_image_openai, analyze_image_openai
 from tts import generate_speech
 from utils import anthropic_client
-from performance_metrics import record_response_time, record_model_usage, record_command_usage, record_error, get_performance_metrics
+from performance_metrics import record_response_time, record_model_usage, record_command_usage, record_error, get_performance_metrics, save_performance_data
 
 logger = logging.getLogger(__name__)
 
@@ -209,7 +209,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error(f"Error processing message for user {user_id}: {str(e)}")
         await update.message.reply_text(f"An error occurred: {str(e)}")
         record_error("message_processing_error")
-
+        
 async def get_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("history")
     user_id = update.effective_user.id
@@ -251,13 +251,15 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             typing_task.cancel()
 
         end_time = time.time()
-        record_response_time(end_time - start_time)
+        response_time = end_time - start_time
+        record_response_time(response_time)
+        logger.info(f"Image generated in {response_time:.2f} seconds")
 
     except Exception as e:
         logger.error(f"Image generation error for user {update.effective_user.id}: {str(e)}")
         await update.message.reply_text(f"An error occurred while generating the image: {str(e)}")
         record_error("image_generation_error")
-
+        
 async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("analyze_image")
     if update.message.photo:
@@ -290,13 +292,15 @@ async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             typing_task.cancel()
 
         end_time = time.time()
-        record_response_time(end_time - start_time)
+        response_time = end_time - start_time
+        record_response_time(response_time)
+        logger.info(f"Image analyzed in {response_time:.2f} seconds")
 
     except Exception as e:
         logger.error(f"Image analysis error for user {update.effective_user.id}: {str(e)}")
         await update.message.reply_text(f"An error occurred while analyzing the image: {str(e)}")
         record_error("image_analysis_error")
-
+        
 async def set_system_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("set_system_message")
     if not context.args:
@@ -438,8 +442,19 @@ async def admin_performance(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("You don't have permission to use this command.")
         return
     
-    metrics = get_performance_metrics()
-    await update.message.reply_text(f"Performance metrics:\n\n{metrics}")
+    try:
+        # Force a save of current performance data
+        save_performance_data()
+        
+        metrics = get_performance_metrics()
+        if not metrics.strip():
+            logger.warning("No performance metrics retrieved")
+            await update.message.reply_text("No performance metrics available at this time.")
+        else:
+            await update.message.reply_text(f"Performance metrics:\n\n{metrics}")
+    except Exception as e:
+        logger.error(f"Error retrieving performance metrics: {str(e)}")
+        await update.message.reply_text(f"An error occurred while retrieving performance metrics: {str(e)}")
 
 # You might want to add a function to handle messages when the bot is in a group
 async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
