@@ -5,6 +5,7 @@ This project implements a feature-rich Telegram bot powered by Anthropic's langu
 ## Features
 
 - Chat functionality using Anthropic's language models
+- Customizable system message for AI behavior
 - Image generation using OpenAI's DALL-E 3
 - Image analysis using OpenAI's GPT-4 Vision
 - Text-to-speech functionality using Eleven Labs API
@@ -64,6 +65,8 @@ Once the bot is running, you can interact with it on Telegram using the followin
 - `/history` - Show your recent conversations
 - `/generate_image <prompt>` - Generate an image based on a text prompt
 - `/analyze_image` - Analyze an image (send this command as a caption with an image)
+- `/set_system_message <message>` - Set a custom system message for the AI
+- `/get_system_message` - Show the current system message
 
 ## Project Structure
 
@@ -80,9 +83,20 @@ Once the bot is running, you can interact with it on Telegram using the followin
 You can customize the bot's behavior by modifying the `bot.py` file. Some areas you might want to customize include:
 
 - The default model in `config.py`
+- The default system message in `config.py`
 - The text-to-speech parameters in the `generate_speech` function
 - The periodic update intervals for model and voice caches
 - The number of conversations to retrieve in the history command
+
+## System Messages
+The bot allows each user to set their own system message, which influences how the AI responds to their queries. Here's how it works:
+
+Each user can set their own custom system message using the /set_system_message command.
+If a user hasn't set a custom message, the bot uses the default system message defined in config.py.
+The system message is stored per user and persists across conversations until changed.
+Users can view their current system message with the /get_system_message command.
+
+This feature allows for personalized AI interactions, as each user can tailor the AI's behavior to their preferences or needs.
 
 ## Running as a Service on Ubuntu
 
