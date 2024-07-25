@@ -17,3 +17,4 @@ if not TELEGRAM_BOT_TOKEN or not ANTHROPIC_API_KEY:
 DEFAULT_MODEL = "claude-3-5-sonnet-20240620"
 
 DEFAULT_SYSTEM_MESSAGE = "You are a helpful assistant."
+ADMIN_USER_IDS = [77446618] 

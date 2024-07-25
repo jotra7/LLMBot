@@ -4,18 +4,19 @@ import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
-from config import DEFAULT_MODEL, DEFAULT_SYSTEM_MESSAGE
+from config import ADMIN_USER_IDS, DEFAULT_MODEL, DEFAULT_SYSTEM_MESSAGE
 from model_cache import get_models
 from voice_cache import get_voices, get_default_voice
-from database import save_conversation, get_user_conversations
+from database import save_conversation, get_user_conversations, get_all_users, ban_user, unban_user
 from image_processing import generate_image_openai, analyze_image_openai
 from tts import generate_speech
 from utils import anthropic_client
-from performance_metrics import add_image_generation_time, get_average_generation_time
+from performance_metrics import record_response_time, record_model_usage, record_command_usage, record_error, get_performance_metrics
 
 logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("start")
     user = update.effective_user
     context.user_data['model'] = DEFAULT_MODEL
     models = await get_models()
@@ -35,7 +36,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.info(f"User {update.effective_user.id} requested help")
+    record_command_usage("help")
+    user_id = update.effective_user.id
+    logger.info(f"User {user_id} requested help")
+    
+    is_admin = user_id in ADMIN_USER_IDS
+    
     help_text = (
         "Available commands:\n"
         "/start - Start the bot\n"
@@ -53,15 +59,33 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/set_system_message <message> - Set a custom system message for the AI\n"
         "/get_system_message - Show the current system message"
     )
+    
+    if is_admin:
+        admin_help_text = (
+            "\n\nAdmin commands:\n"
+            "/admin_broadcast <message> - Send a message to all users\n"
+            "/admin_user_stats - View user statistics\n"
+            "/admin_ban <user_id> - Ban a user\n"
+            "/admin_unban <user_id> - Unban a user\n"
+            "/admin_set_global_system <message> - Set the global default system message\n"
+            "/admin_logs - View recent logs\n"
+            "/admin_restart - Restart the bot\n"
+            "/admin_update_models - Update the model cache\n"
+            "/admin_performance - View performance metrics"
+        )
+        help_text += admin_help_text
+    
     await update.message.reply_text(help_text)
 
 async def list_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("list_models")
     logger.info(f"User {update.effective_user.id} requested model list")
     models = await get_models()
     models_text = "Available models:\n" + "\n".join([f"• {name}" for name in models.values()])
     await update.message.reply_text(models_text)
 
 async def set_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("set_model")
     logger.info(f"User {update.effective_user.id} initiated model selection")
     models = await get_models()
     keyboard = [
@@ -72,12 +96,14 @@ async def set_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Please choose a model:", reply_markup=reply_markup)
 
 async def current_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("current_model")
     current = context.user_data.get('model', DEFAULT_MODEL)
     models = await get_models()
     logger.info(f"User {update.effective_user.id} checked current model: {models.get(current, 'Unknown')}")
     await update.message.reply_text(f"Current model: {models.get(current, 'Unknown')}")
 
 async def tts_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("tts")
     if not context.args:
         await update.message.reply_text("Please provide some text after the /tts command.")
         return
@@ -96,14 +122,17 @@ async def tts_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     except Exception as e:
         logger.error(f"TTS error for user {update.effective_user.id}: {str(e)}")
         await update.message.reply_text(f"An error occurred while generating speech: {str(e)}")
+        record_error("tts_error")
 
 async def list_voices(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("list_voices")
     logger.info(f"User {update.effective_user.id} requested voice list")
     voices = await get_voices()
     voices_text = "Available voices:\n" + "\n".join([f"• {name}" for name in voices.values()])
     await update.message.reply_text(voices_text)
 
 async def set_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("set_voice")
     logger.info(f"User {update.effective_user.id} initiated voice selection")
     voices = await get_voices()
     keyboard = [
@@ -114,6 +143,7 @@ async def set_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Please choose a voice:", reply_markup=reply_markup)
 
 async def current_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("current_voice")
     current = context.user_data.get('voice_id', get_default_voice())
     voices = await get_voices()
     logger.info(f"User {update.effective_user.id} checked current voice: {voices.get(current, 'Unknown')}")
@@ -152,6 +182,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         user_message = user_message.replace(f"@{bot_username}", "").strip()
 
     logger.info(f"User {user_id} sent message: '{user_message[:50]}...'")
+    start_time = time.time()
+    
     try:
         response = anthropic_client.messages.create(
             model=model,
@@ -165,28 +197,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         assistant_response = response.content[0].text
         await update.message.reply_text(assistant_response)
 
+        # Save the conversation
         save_conversation(user_id, user_message, assistant_response)
+
+        # Record performance metrics
+        end_time = time.time()
+        record_response_time(end_time - start_time)
+        record_model_usage(model)
 
     except Exception as e:
         logger.error(f"Error processing message for user {user_id}: {str(e)}")
         await update.message.reply_text(f"An error occurred: {str(e)}")
+        record_error("message_processing_error")
 
-async def set_system_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not context.args:
-        await update.message.reply_text("Please provide a system message after the /set_system_message command.")
-        return
-
-    new_system_message = ' '.join(context.args)
-    context.user_data['system_message'] = new_system_message
-    logger.info(f"User {update.effective_user.id} set new system message: '{new_system_message[:50]}...'")
-    await update.message.reply_text(f"System message updated to: {new_system_message}")
-
-async def get_system_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    system_message = context.user_data.get('system_message', DEFAULT_SYSTEM_MESSAGE)
-    logger.info(f"User {update.effective_user.id} requested current system message")
-    await update.message.reply_text(f"Current system message: {system_message}")
-    
 async def get_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("history")
     user_id = update.effective_user.id
     logger.info(f"User {user_id} requested conversation history")
     conversations = get_user_conversations(user_id)
@@ -200,6 +225,7 @@ async def get_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("You don't have any conversation history yet.")
 
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("generate_image")
     if not context.args:
         await update.message.reply_text("Please provide a prompt after the /generate_image command.")
         return
@@ -209,6 +235,7 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
 
+    start_time = time.time()
     try:
         async def keep_typing():
             while True:
@@ -218,28 +245,21 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         typing_task = asyncio.create_task(keep_typing())
 
         try:
-            start_time = time.time()
             image_url = await generate_image_openai(prompt)
-            generation_time = time.time() - start_time
-            
-            add_image_generation_time(generation_time)
-            avg_time = get_average_generation_time()
-            
-            await update.message.reply_photo(
-                photo=image_url, 
-                caption=f"Generated image for: {prompt}\n"
-                        f"Generation time: {generation_time:.2f} seconds\n"
-                        f"Average generation time: {avg_time:.2f} seconds"
-            )
+            await update.message.reply_photo(photo=image_url, caption=f"Generated image for: {prompt}")
         finally:
             typing_task.cancel()
+
+        end_time = time.time()
+        record_response_time(end_time - start_time)
 
     except Exception as e:
         logger.error(f"Image generation error for user {update.effective_user.id}: {str(e)}")
         await update.message.reply_text(f"An error occurred while generating the image: {str(e)}")
+        record_error("image_generation_error")
 
 async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Check if there's an image in the message or in the reply
+    record_command_usage("analyze_image")
     if update.message.photo:
         photo = update.message.photo[-1]
     elif update.message.reply_to_message and update.message.reply_to_message.photo:
@@ -252,6 +272,7 @@ async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
+    start_time = time.time()
     try:
         async def keep_typing():
             while True:
@@ -268,6 +289,177 @@ async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         finally:
             typing_task.cancel()
 
+        end_time = time.time()
+        record_response_time(end_time - start_time)
+
     except Exception as e:
         logger.error(f"Image analysis error for user {update.effective_user.id}: {str(e)}")
         await update.message.reply_text(f"An error occurred while analyzing the image: {str(e)}")
+        record_error("image_analysis_error")
+
+async def set_system_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("set_system_message")
+    if not context.args:
+        await update.message.reply_text("Please provide a system message after the /set_system_message command.")
+        return
+
+    new_system_message = ' '.join(context.args)
+    context.user_data['system_message'] = new_system_message
+    logger.info(f"User {update.effective_user.id} set new system message: '{new_system_message[:50]}...'")
+    await update.message.reply_text(f"System message updated to: {new_system_message}")
+
+async def get_system_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("get_system_message")
+    system_message = context.user_data.get('system_message', DEFAULT_SYSTEM_MESSAGE)
+    logger.info(f"User {update.effective_user.id} requested current system message")
+    await update.message.reply_text(f"Current system message: {system_message}")
+
+# Admin commands
+
+async def admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("admin_broadcast")
+    if update.effective_user.id not in ADMIN_USER_IDS:
+        await update.message.reply_text("You don't have permission to use this command.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text("Please provide a message to broadcast.")
+        return
+    
+    message = ' '.join(context.args)
+    users = get_all_users()
+    success_count = 0
+    for user_id in users:
+        try:
+            await context.bot.send_message(chat_id=user_id, text=message)
+            success_count += 1
+        except Exception as e:
+            logger.error(f"Failed to send broadcast to user {user_id}: {str(e)}")
+    
+    await update.message.reply_text(f"Broadcast sent to {success_count}/{len(users)} users.")
+
+async def admin_user_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("admin_user_stats")
+    if update.effective_user.id not in ADMIN_USER_IDS:
+        await update.message.reply_text("You don't have permission to use this command.")
+        return
+    
+    users = get_all_users()
+    total_users = len(users)
+    # You might want to add more detailed statistics here
+    await update.message.reply_text(f"Total users: {total_users}")
+
+async def admin_ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("admin_ban_user")
+    if update.effective_user.id not in ADMIN_USER_IDS:
+        await update.message.reply_text("You don't have permission to use this command.")
+        return
+    
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text("Please provide a valid user ID to ban.")
+        return
+    
+    user_id = int(context.args[0])
+    if ban_user(user_id):
+        await update.message.reply_text(f"User {user_id} has been banned.")
+    else:
+        await update.message.reply_text(f"Failed to ban user {user_id}.")
+
+async def admin_unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("admin_unban_user")
+    if update.effective_user.id not in ADMIN_USER_IDS:
+        await update.message.reply_text("You don't have permission to use this command.")
+        return
+    
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text("Please provide a valid user ID to unban.")
+        return
+    
+    user_id = int(context.args[0])
+    if unban_user(user_id):
+        await update.message.reply_text(f"User {user_id} has been unbanned.")
+    else:
+        await update.message.reply_text(f"Failed to unban user {user_id}.")
+
+async def admin_set_global_system_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("admin_set_global_system_message")
+    if update.effective_user.id not in ADMIN_USER_IDS:
+        await update.message.reply_text("You don't have permission to use this command.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text("Please provide a new global system message.")
+        return
+    
+    new_message = ' '.join(context.args)
+    global DEFAULT_SYSTEM_MESSAGE
+    DEFAULT_SYSTEM_MESSAGE = new_message
+    await update.message.reply_text(f"Global system message updated to: {new_message}")
+
+async def admin_view_logs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("admin_view_logs")
+    if update.effective_user.id not in ADMIN_USER_IDS:
+        await update.message.reply_text("You don't have permission to use this command.")
+        return
+    
+    try:
+        with open('bot.log', 'r') as log_file:
+            logs = log_file.read()[-4000:]  # Get last 4000 characters
+        await update.message.reply_text(f"Recent logs:\n\n{logs}")
+    except Exception as e:
+        await update.message.reply_text(f"Failed to read logs: {str(e)}")
+
+async def admin_restart_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("admin_restart_bot")
+    if update.effective_user.id not in ADMIN_USER_IDS:
+        await update.message.reply_text("You don't have permission to use this command.")
+        return
+    
+    await update.message.reply_text("Restarting the bot...")
+    # You'll need to implement the actual restart logic elsewhere
+    # This might involve exiting the script and having a separate process manager restart it
+
+async def admin_update_model_cache(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("admin_update_model_cache")
+    if update.effective_user.id not in ADMIN_USER_IDS:
+        await update.message.reply_text("You don't have permission to use this command.")
+        return
+    
+    await update.message.reply_text("Updating model cache...")
+    try:
+        await update_model_cache()
+        await update.message.reply_text("Model cache updated successfully.")
+    except Exception as e:
+        await update.message.reply_text(f"Failed to update model cache: {str(e)}")
+
+async def admin_performance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("admin_performance")
+    if update.effective_user.id not in ADMIN_USER_IDS:
+        await update.message.reply_text("You don't have permission to use this command.")
+        return
+    
+    metrics = get_performance_metrics()
+    await update.message.reply_text(f"Performance metrics:\n\n{metrics}")
+
+# You might want to add a function to handle messages when the bot is in a group
+async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # This function would be similar to handle_message, but with group-specific logic
+    pass
+
+# Error handler
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error(f"Exception while handling an update: {context.error}")
+    record_error(str(context.error))
+
+    # Send message to developer
+    developer_chat_id = ADMIN_USER_IDS[0]  # Assuming the first admin ID is the developer
+    await context.bot.send_message(
+        chat_id=developer_chat_id,
+        text=f"An error occurred: {context.error}"
+    )
+
+    # Inform user
+    if update.effective_message:
+        await update.effective_message.reply_text("An error occurred while processing your request. The developer has been notified.")
+    
+    

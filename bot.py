@@ -5,7 +5,11 @@ from handlers import (
     start, help_command, list_models, set_model, current_model,
     tts_command, list_voices, set_voice, current_voice, get_history,
     generate_image, analyze_image, button_callback, handle_message,
-    set_system_message, get_system_message  
+    set_system_message, get_system_message,
+    # Admin commands
+    admin_broadcast, admin_user_stats, admin_ban_user, admin_unban_user,
+    admin_set_global_system_message, admin_view_logs, admin_restart_bot,
+    admin_update_model_cache, admin_performance  # Changed from admin_performance_metrics
 )
 from utils import periodic_cache_update, periodic_voice_cache_update
 from database import init_db
@@ -40,8 +44,24 @@ def create_application():
     application.add_handler(CommandHandler("history", get_history))
     application.add_handler(CommandHandler("generate_image", generate_image))
     application.add_handler(CommandHandler("analyze_image", analyze_image))
-    application.add_handler(CommandHandler("set_system_message", set_system_message))  # Add this line
-    application.add_handler(CommandHandler("get_system_message", get_system_message))  # Add this line
+    application.add_handler(CommandHandler("set_system_message", set_system_message))
+    application.add_handler(CommandHandler("get_system_message", get_system_message))
+    application.job_queue.run_repeating(periodic_cache_update, interval=timedelta(days=1), first=10)
+    application.job_queue.run_repeating(periodic_voice_cache_update, interval=timedelta(days=1), first=10)
+    application.job_queue.run_repeating(lambda context: save_performance_data(), interval=timedelta(hours=1), first=10)
+
+    
+    # Admin command handlers
+    application.add_handler(CommandHandler("admin_broadcast", admin_broadcast))
+    application.add_handler(CommandHandler("admin_user_stats", admin_user_stats))
+    application.add_handler(CommandHandler("admin_ban", admin_ban_user))
+    application.add_handler(CommandHandler("admin_unban", admin_unban_user))
+    application.add_handler(CommandHandler("admin_set_global_system", admin_set_global_system_message))
+    application.add_handler(CommandHandler("admin_logs", admin_view_logs))
+    application.add_handler(CommandHandler("admin_restart", admin_restart_bot))
+    application.add_handler(CommandHandler("admin_update_models", admin_update_model_cache))
+    application.add_handler(CommandHandler("admin_performance", admin_performance))  # Changed from admin_performance_metrics
+    
     application.add_handler(CallbackQueryHandler(button_callback))
     
     # Only respond to messages that are either in private chats or mention the bot
