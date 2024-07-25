@@ -88,6 +88,16 @@ You can customize the bot's behavior by modifying the `bot.py` file. Some areas 
 - The periodic update intervals for model and voice caches
 - The number of conversations to retrieve in the history command
 
+## System Messages
+The bot allows each user to set their own system message, which influences how the AI responds to their queries. Here's how it works:
+
+Each user can set their own custom system message using the /set_system_message command.
+If a user hasn't set a custom message, the bot uses the default system message defined in config.py.
+The system message is stored per user and persists across conversations until changed.
+Users can view their current system message with the /get_system_message command.
+
+This feature allows for personalized AI interactions, as each user can tailor the AI's behavior to their preferences or needs.
+
 ## Running as a Service on Ubuntu
 
 To run the bot as a background service on Ubuntu:
