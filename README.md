@@ -146,3 +146,140 @@ You can customize the bot's behavior by modifying the following:
 - The periodic update intervals for model and voice caches
 - The performance data save interval in `bot.py`
 - The number of conversations to retrieve in the history command
+
+## Running as a Service on Ubuntu
+
+To run the bot as a background service on Ubuntu, follow these steps:
+
+1. Ensure your .env file is in place and properly configured:
+
+   ```bash
+   nano /path/to/your/bot/.env
+   ```
+
+   Make sure it contains all necessary API keys and configurations:
+
+   ```
+   TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+   ANTHROPIC_API_KEY=your_anthropic_api_key
+   OPENAI_API_KEY=your_openai_api_key
+   ELEVENLABS_API_KEY=your_elevenlabs_api_key
+   FAL_KEY=your_fal_ai_api_key
+   ```
+
+2. Create a service file:
+
+   ```bash
+   sudo nano /etc/systemd/system/telegram-bot.service
+   ```
+
+3. Add the following content to the file (adjust paths as necessary):
+
+   ```ini
+   [Unit]
+   Description=Telegram Bot Service
+   After=network.target
+
+   [Service]
+   ExecStart=/path/to/your/venv/bin/python /path/to/your/bot/main.py
+   WorkingDirectory=/path/to/your/bot
+   StandardOutput=inherit
+   StandardError=inherit
+   Restart=always
+   User=your_username
+   Environment="PATH=/path/to/your/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+   EnvironmentFile=/path/to/your/bot/.env
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+   Make sure to replace:
+   - `/path/to/your/venv/bin/python` with the actual path to the Python executable in your virtual environment
+   - `/path/to/your/bot/main.py` with the actual path to your `main.py` file
+   - `/path/to/your/bot` with the actual path to your bot's directory
+   - `your_username` with the username under which the bot should run
+   - `/path/to/your/venv/bin` in the PATH with the actual path to your virtual environment's bin directory
+   - `/path/to/your/bot/.env` with the actual path to your .env file
+
+4. Save the file and exit the editor (in nano, press `Ctrl+X`, then `Y`, then `Enter`).
+
+5. Set the correct permissions for the .env file:
+
+   ```bash
+   sudo chown root:root /path/to/your/bot/.env
+   sudo chmod 600 /path/to/your/bot/.env
+   ```
+
+   This ensures that only the root user can read the .env file, which contains sensitive information.
+
+6. Reload the systemd manager to recognize the new service:
+
+   ```bash
+   sudo systemctl daemon-reload
+   ```
+
+7. Start the service:
+
+   ```bash
+   sudo systemctl start telegram-bot
+   ```
+
+8. Enable the service to start automatically on boot:
+
+   ```bash
+   sudo systemctl enable telegram-bot
+   ```
+
+9. Check the status of the service:
+
+   ```bash
+   sudo systemctl status telegram-bot
+   ```
+
+   This should show that the service is active and running.
+
+### Additional Service Management Commands
+
+- To stop the service:
+
+  ```bash
+  sudo systemctl stop telegram-bot
+  ```
+
+- To restart the service:
+
+  ```bash
+  sudo systemctl restart telegram-bot
+  ```
+
+- To view the service logs:
+
+  ```bash
+  sudo journalctl -u telegram-bot
+  ```
+
+  Add `-f` to follow the logs in real-time:
+
+  ```bash
+  sudo journalctl -u telegram-bot -f
+  ```
+
+By setting up your Telegram bot as a service with proper .env file handling, it will run continuously in the background, automatically restart if the system reboots or if the bot crashes, and have access to all necessary environment variables and API keys.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- Anthropic for their powerful language models
+- OpenAI for their image generation and analysis capabilities
+- Eleven Labs for their text-to-speech API
+- Fal.ai for their image and video generation capabilities
+- python-telegram-bot for the Telegram bot framework
+
