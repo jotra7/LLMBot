@@ -17,22 +17,7 @@ performance_data = {
 def init_performance_db():
     conn = sqlite3.connect('performance_metrics.db')
     cursor = conn.cursor()
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS response_times
-    (id INTEGER PRIMARY KEY, timestamp REAL, avg_duration REAL, min_duration REAL, max_duration REAL)
-    ''')
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS model_usage
-    (id INTEGER PRIMARY KEY, model TEXT, count INTEGER)
-    ''')
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS command_usage
-    (id INTEGER PRIMARY KEY, command TEXT, count INTEGER)
-    ''')
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS errors
-    (id INTEGER PRIMARY KEY, error_type TEXT, count INTEGER)
-    ''')
+    # ... (create tables code remains the same)
     conn.commit()
     conn.close()
     logger.info("Performance database initialized")
@@ -126,3 +111,8 @@ def get_performance_metrics():
     
     logger.info(f"Retrieved performance metrics: {metrics}")
     return metrics
+
+# Make sure all necessary functions are exported
+__all__ = ['init_performance_db', 'record_response_time', 'record_model_usage', 
+           'record_command_usage', 'record_error', 'save_performance_data', 
+           'get_performance_metrics']

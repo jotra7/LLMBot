@@ -1,10 +1,12 @@
 import asyncio
 import logging
 import time
+import requests
+from queue_system import queue_task, check_queue_status as _check_queue_status
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ChatAction
-from config import ADMIN_USER_IDS, DEFAULT_MODEL, DEFAULT_SYSTEM_MESSAGE
+from config import ADMIN_USER_IDS, DEFAULT_MODEL, DEFAULT_SYSTEM_MESSAGE, ELEVENLABS_API_KEY, ELEVENLABS_SOUND_GENERATION_API_URL,FLUX_MODELS, DEFAULT_FLUX_MODEL
 from model_cache import get_models
 from voice_cache import get_voices, get_default_voice
 from database import save_conversation, get_user_conversations, get_all_users, ban_user, unban_user
@@ -12,6 +14,8 @@ from image_processing import generate_image_openai, analyze_image_openai
 from tts import generate_speech
 from utils import anthropic_client
 from performance_metrics import record_response_time, record_model_usage, record_command_usage, record_error, get_performance_metrics, save_performance_data
+import fal_client
+
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +53,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/listmodels - List available Anthropic models\n"
         "/setmodel - Set the Anthropic model to use\n"
         "/currentmodel - Show the currently selected model\n"
-        "/tts <text> - Convert specific text to speech\n"
+        "/tts <text> - Convert specific text to speech\n"        
+        "/video <text> - Make a short video clip (Takes a long time)\n"
         "/listvoices - List available voices\n"
         "/setvoice - Choose a voice for text-to-speech\n"
         "/currentvoice - Show the currently selected voice\n"
@@ -57,7 +62,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/generate_image <prompt> - Generate an image based on a text prompt\n"
         "/analyze_image - Analyze an image (use this command when sending an image or reply to an image with this command)\n"
         "/set_system_message <message> - Set a custom system message for the AI\n"
-        "/get_system_message - Show the current system message"
+        "/get_system_message - Show the current system message\n"
+        "/generatesound <description> - Generate a sound based on the provided text description\n"
+        "/flux <prompt> - Generate a realistic image using the Flux AI model\n"
+        "/list_flux_models - List available Flux AI models\n"
+        "/set_flux_model <model_name> - Set the Flux AI model to use\n"
+        "/current_flux_model - Show the currently selected Flux AI model\n"
     )
     
     if is_admin:
@@ -102,6 +112,7 @@ async def current_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.info(f"User {update.effective_user.id} checked current model: {models.get(current, 'Unknown')}")
     await update.message.reply_text(f"Current model: {models.get(current, 'Unknown')}")
 
+@queue_task('long_run')
 async def tts_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("tts")
     if not context.args:
@@ -224,6 +235,7 @@ async def get_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     else:
         await update.message.reply_text("You don't have any conversation history yet.")
 
+@queue_task('long_run')
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("generate_image")
     if not context.args:
@@ -260,6 +272,7 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(f"An error occurred while generating the image: {str(e)}")
         record_error("image_generation_error")
         
+@queue_task('long_run')
 async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("analyze_image")
     if update.message.photo:
@@ -476,5 +489,238 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     # Inform user
     if update.effective_message:
         await update.effective_message.reply_text("An error occurred while processing your request. The developer has been notified.")
+
+async def list_flux_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("list_flux_models")
+    models_text = "Available Flux models:\n" + "\n".join([f"• {name}" for name in FLUX_MODELS.keys()])
+    await update.message.reply_text(models_text)
+
+async def set_flux_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("set_flux_model")
+    keyboard = [
+        [InlineKeyboardButton(name, callback_data=f"set_flux_model:{model_id}")]
+        for name, model_id in FLUX_MODELS.items()
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Please choose a Flux model:", reply_markup=reply_markup)
+
+async def flux_model_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
     
+    model_id = query.data.split(':')[1]
+    model_name = next((name for name, id in FLUX_MODELS.items() if id == model_id), None)
+    
+    if model_name:
+        context.user_data['flux_model'] = model_name
+        await query.edit_message_text(f"Flux model set to {model_name}")
+    else:
+        await query.edit_message_text("Invalid model selection. Please try again.")
+
+async def current_flux_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("current_flux_model")
+    current = context.user_data.get('flux_model', DEFAULT_FLUX_MODEL)
+    await update.message.reply_text(f"Current Flux model: {current}")
+
+@queue_task('long_run')
+async def flux_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("flux")
+    if not context.args:
+        await update.message.reply_text("Please provide a prompt after the /flux command.")
+        return
+
+    prompt = ' '.join(context.args)
+    logger.info(f"User {update.effective_user.id} requested Flux image generation: '{prompt[:50]}...'")
+
+    model_name = context.user_data.get('flux_model', DEFAULT_FLUX_MODEL)
+    model_id = FLUX_MODELS[model_name]
+
+    # Send an initial message
+    progress_message = await update.message.reply_text("🎨 Initializing image generation...")
+
+    start_time = time.time()
+    try:
+        async def update_progress():
+            steps = [
+                "Analyzing prompt", "Preparing canvas", "Sketching outlines", 
+                "Adding details", "Applying colors", "Refining image", 
+                "Enhancing details", "Adjusting lighting", "Finalizing composition"
+            ]
+            step_index = 0
+            dots = 0
+            while True:
+                step = steps[step_index % len(steps)]
+                await progress_message.edit_text(f"🎨 {step}{'.' * dots}")
+                dots = (dots + 1) % 4
+                step_index += 1
+                await asyncio.sleep(2)  # Update every 2 seconds
+
+        progress_task = asyncio.create_task(update_progress())
+
+        try:
+            handler = fal_client.submit(
+                model_id,
+                arguments={
+                    "prompt": prompt,
+                    "image_size": "landscape_4_3",
+                    "num_inference_steps": 28,
+                    "guidance_scale": 3.5,
+                    "num_images": 1,
+                    "safety_tolerance": "2" if model_name == "flux-pro" else None,
+                },
+            )
+
+            result = handler.get()
+            
+            # Cancel the progress task
+            progress_task.cancel()
+            
+            # Update the progress message
+            await progress_message.edit_text("✅ Image generated! Uploading...")
+            
+            if result and result.get('images') and len(result['images']) > 0:
+                image_url = result['images'][0]['url']
+                await update.message.reply_photo(photo=image_url, caption=f"Generated image using {model_name} for: {prompt}")
+                
+                # Delete the progress message
+                await progress_message.delete()
+            else:
+                await progress_message.edit_text("Sorry, I couldn't generate an image. Please try again.")
+        except Exception as e:
+            logger.error(f"Error during Flux image generation: {str(e)}")
+            await progress_message.edit_text(f"An error occurred while generating the image: {str(e)}")
+        finally:
+            if not progress_task.cancelled():
+                progress_task.cancel()
+
+        end_time = time.time()
+        response_time = end_time - start_time
+        record_response_time(response_time)
+        logger.info(f"Flux image generated using {model_name} in {response_time:.2f} seconds")
+
+    except Exception as e:
+        logger.error(f"Flux image generation error for user {update.effective_user.id}: {str(e)}")
+        await progress_message.edit_text(f"An error occurred while setting up image generation: {str(e)}")
+        record_error("flux_image_generation_error")
+
+@queue_task('long_run')
+async def generate_sound(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("generate_sound")
+    if not context.args:
+        await update.message.reply_text("Please provide a text description for the sound you want to generate.")
+        return
+
+    text = ' '.join(context.args)
+    
+    logger.info(f"User {update.effective_user.id} requested sound generation: '{text[:50]}...'")
+    
+    # Send an initial message
+    progress_message = await update.message.reply_text("🎵 Generating sound... This may take a minute or two.")
+
+    headers = {
+        "xi-api-key": ELEVENLABS_API_KEY,
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "text": text,
+        "duration_seconds": None,  # Let the API determine the optimal duration
+        "prompt_influence": 0.3  # Default value
+    }
+
+    start_time = time.time()
+    try:
+        async def update_progress():
+            dots = 1
+            while True:
+                await progress_message.edit_text(f"🎵 Generating sound{'.' * dots}")
+                dots = (dots % 3) + 1  # Cycle through 1, 2, 3 dots
+                await asyncio.sleep(1)
+
+        progress_task = asyncio.create_task(update_progress())
+
+        try:
+            response = requests.post(ELEVENLABS_SOUND_GENERATION_API_URL, headers=headers, json=data)
+            response.raise_for_status()
+            
+            # Cancel the progress task
+            progress_task.cancel()
+            
+            # Update the progress message
+            await progress_message.edit_text("✅ Sound generated! Uploading...")
+            
+            # Send the audio file
+            await update.message.reply_audio(response.content, filename="generated_sound.mp3")
+            
+            # Delete the progress message
+            await progress_message.delete()
+        finally:
+            if not progress_task.cancelled():
+                progress_task.cancel()
+
+        end_time = time.time()
+        response_time = end_time - start_time
+        record_response_time(response_time)
+        logger.info(f"Sound generated in {response_time:.2f} seconds")
+
+    except Exception as e:
+        logger.error(f"Sound generation error for user {update.effective_user.id}: {str(e)}")
+        await progress_message.edit_text(f"❌ An error occurred while generating the sound: {str(e)}")
+        record_error("sound_generation_error")
+ 
+
+
+@queue_task('long_run')
+async def generate_text_to_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("generate_text_to_video")
+    if not context.args:
+        await update.message.reply_text("Please provide a prompt after the /video command.")
+        return
+
+    prompt = ' '.join(context.args)
+    user_id = update.effective_user.id
+    logger.info(f"User {user_id} requested text-to-video generation: '{prompt[:50]}...'")
+
+    progress_message = await update.message.reply_text("🎬 Generating video... This may take 20-30 seconds or more.")
+
+    try:
+        handler = fal_client.submit(
+            "fal-ai/fast-animatediff/text-to-video",
+            arguments={
+                "prompt": prompt,
+                "num_frames": 150,
+                "num_inference_steps": 25,
+                "guidance_scale": 7.5,
+                "fps": 30,
+                "video_size": "square"
+            }
+        )
+
+        result = handler.get()
+        video_url = result['video']['url']
+        
+        await progress_message.edit_text("✅ Video generated! Uploading...")
+        
+        video_content = requests.get(video_url).content
+        
+        await update.message.reply_video(video_content, caption=f"Generated video for: {prompt}")
+        
+        await progress_message.delete()
+
+        logger.info(f"Video generated successfully for user {user_id}")
+
+    except Exception as e:
+        logger.error(f"Video generation error for user {user_id}: {str(e)}")
+        try:
+            await progress_message.edit_text(f"❌ An error occurred while generating the video: {str(e)}")
+        except Exception as edit_error:
+            logger.error(f"Error updating progress message: {str(edit_error)}")
+        record_error("video_generation_error")
+    
+    finally:
+        logger.info(f"Video generation process completed for user {user_id}")
+
+
+async def queue_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _check_queue_status(update, context)
     

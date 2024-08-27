@@ -1,0 +1,6 @@
+*.txt
+.env
+__*
+venv
+*.log
+*.db
