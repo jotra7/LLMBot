@@ -64,7 +64,7 @@ def queue_task(task_type='quick'):
         return wrapper
     return decorator
 
-def start_task_queue():
+async def start_task_queue():
     logger.info("Starting task queue")
     task_queue.start()
     logger.info(f"Task queue started with workers: {', '.join(task_queue.workers.keys())}")

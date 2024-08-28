@@ -28,14 +28,10 @@ async def main():
         await update_model_cache()
         debug_logger.info("Model cache updated successfully")
 
-        # Create the application
-        debug_logger.info("About to create application")
-        application = initialize_bot()
-        debug_logger.info("Application created successfully")
-
-        debug_logger.info("About to initialize application")
-        await application.initialize()
-        debug_logger.info("Application initialized successfully")
+        # Initialize the bot
+        debug_logger.info("About to initialize bot")
+        application = await initialize_bot()
+        debug_logger.info("Bot initialized successfully")
 
         debug_logger.info("About to start application")
         await application.start()
@@ -45,12 +41,12 @@ async def main():
         await application.updater.start_polling()
         debug_logger.info("Polling started successfully")
 
-        debug_logger.info("Bot is running. Entering main loop.")
-
+        debug_logger.info("Bot is running. Press Ctrl+C to stop.")
         # Keep the bot running
         while True:
-            debug_logger.debug("Main loop iteration")
-            await asyncio.sleep(10)  # Log every 10 seconds to reduce log size
+            await asyncio.sleep(1)
+    except KeyboardInterrupt:
+        debug_logger.info("Received keyboard interrupt. Stopping bot.")
     except Exception as e:
         debug_logger.exception(f"An error occurred in main: {str(e)}")
     finally:
@@ -62,11 +58,6 @@ async def main():
                 debug_logger.info("Application stop completed")
             except Exception as e:
                 debug_logger.exception(f"Error during application stop: {str(e)}")
-            try:
-                await application.shutdown()
-                debug_logger.info("Application shutdown completed")
-            except Exception as e:
-                debug_logger.exception(f"Error during application shutdown: {str(e)}")
         debug_logger.info("Bot stopped")
 
 if __name__ == "__main__":

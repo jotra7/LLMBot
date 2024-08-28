@@ -85,16 +85,19 @@ def create_application():
 
     return application
 
-def initialize_bot():
+async def initialize_bot():
     # Initialize the database
     init_db()
     init_performance_db()
 
     # Start the task queue and keep a reference to the worker tasks
-    worker_tasks = start_task_queue()
+    worker_tasks = await start_task_queue()
 
     # Create the application
     application = create_application()
+
+    # Initialize the application
+    await application.initialize()
 
     # Add the worker tasks to the application so they don't get garbage collected
     application.worker_tasks = worker_tasks

@@ -38,7 +38,7 @@ def record_error(error_type):
     performance_data['errors'][error_type] += 1
     logger.debug(f"Recorded error: {error_type}")
 
-def save_performance_data():
+async def save_performance_data():
     conn = sqlite3.connect('performance_metrics.db')
     cursor = conn.cursor()
 
