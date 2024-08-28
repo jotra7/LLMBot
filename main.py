@@ -2,9 +2,8 @@ import logging
 import asyncio
 import os
 from logging.handlers import RotatingFileHandler
-from bot import create_application
+from bot import initialize_bot
 from model_cache import update_model_cache
-from queue_system import start_task_queue
 
 # Set up logging to a separate debug file
 log_dir = "./logs"
@@ -23,7 +22,7 @@ async def main():
     debug_logger.info("Starting main function")
     try:
         debug_logger.info("Entering try block")
-        
+
         # Ensure the model cache is populated before starting the bot
         debug_logger.info("About to update model cache")
         await update_model_cache()
@@ -31,13 +30,8 @@ async def main():
 
         # Create the application
         debug_logger.info("About to create application")
-        application = create_application()
+        application = initialize_bot()
         debug_logger.info("Application created successfully")
-
-        # Start the task queue
-        debug_logger.info("About to start task queue")
-        await start_task_queue(application)
-        debug_logger.info("Task queue started successfully")
 
         debug_logger.info("About to initialize application")
         await application.initialize()
@@ -52,7 +46,7 @@ async def main():
         debug_logger.info("Polling started successfully")
 
         debug_logger.info("Bot is running. Entering main loop.")
-        
+
         # Keep the bot running
         while True:
             debug_logger.debug("Main loop iteration")
