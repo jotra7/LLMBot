@@ -2,16 +2,16 @@ import logging
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 from config import TELEGRAM_BOT_TOKEN
 from handlers import (
-    start, help_command, list_models, set_model, current_model,
-    tts_command, list_voices, set_voice, current_voice, get_history,
-    generate_image, analyze_image, button_callback, handle_message,
-    set_system_message, get_system_message, generate_sound, flux_command,
-    list_flux_models, set_flux_model, current_flux_model, flux_model_callback, 
-    generate_text_to_video, queue_status,
-    # Admin commands
+    start, help_command, get_history, set_system_message, get_system_message,
+    list_models, set_model, current_model, button_callback,
+    tts_command, list_voices, set_voice, current_voice, voice_button_callback,
+    generate_image, analyze_image,
+    generate_text_to_video,
     admin_broadcast, admin_user_stats, admin_ban_user, admin_unban_user,
     admin_set_global_system_message, admin_view_logs, admin_restart_bot,
-    admin_update_model_cache, admin_performance
+    admin_update_model_cache, admin_performance,
+    list_flux_models, set_flux_model, current_flux_model, flux_model_callback, flux_command,
+    handle_message, error_handler
 )
 from utils import periodic_cache_update, periodic_voice_cache_update
 from database import init_db
@@ -52,7 +52,6 @@ def create_application():
     application.add_handler(CallbackQueryHandler(flux_model_callback, pattern=r"^set_flux_model:"))
     application.add_handler(CommandHandler("current_flux_model", current_flux_model))
     application.add_handler(CommandHandler("queue_status", check_queue_status))
-    application.add_handler(CommandHandler("generatesound", generate_sound))
     application.add_handler(CommandHandler("video", generate_text_to_video))
 
     # Admin command handlers
@@ -67,12 +66,16 @@ def create_application():
     application.add_handler(CommandHandler("admin_performance", admin_performance))
 
     application.add_handler(CallbackQueryHandler(button_callback))
+    application.add_handler(CallbackQueryHandler(voice_button_callback, pattern=r"^voice_"))
 
     # Only respond to messages that are either in private chats or mention the bot
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & (filters.ChatType.PRIVATE | filters.Entity("mention")),
         handle_message
     ))
+
+    # Set up error handler
+    application.add_error_handler(error_handler)
 
     # Schedule periodic tasks
     application.job_queue.run_repeating(periodic_cache_update, interval=timedelta(days=1), first=10)
@@ -85,19 +88,16 @@ def create_application():
 
     return application
 
-async def initialize_bot():
+def initialize_bot():
     # Initialize the database
     init_db()
     init_performance_db()
 
     # Start the task queue and keep a reference to the worker tasks
-    worker_tasks = await start_task_queue()
+    worker_tasks = start_task_queue()
 
     # Create the application
     application = create_application()
-
-    # Initialize the application
-    await application.initialize()
 
     # Add the worker tasks to the application so they don't get garbage collected
     application.worker_tasks = worker_tasks

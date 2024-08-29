@@ -20,6 +20,9 @@ class TaskQueue:
         logger.info(f"Adding {task_type} task for user {user_id} to queue")
         await self.queues[task_type].put((user_id, task_func, args, kwargs))
         logger.info(f"{task_type.capitalize()} task added to queue for user {user_id}. Queue size: {self.queues[task_type].qsize()}")
+        # Start processing the queue if it's not already running
+        if task_type not in self.workers or self.workers[task_type].done():
+            self.workers[task_type] = asyncio.create_task(self.worker(task_type))
 
     async def worker(self, queue_type: str):
         logger.info(f"Worker for {queue_type} queue started")
@@ -58,9 +61,10 @@ def queue_task(task_type='quick'):
         async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
             user_id = update.effective_user.id
             logger.info(f"Queueing {task_type} task for user {user_id}")
-            await task_queue.add_task(task_type, user_id, func, update, context, *args, **kwargs)
-#            if task_type == 'long_run':
-#                await update.message.reply_text("Your request has been queued. You'll be notified when it's ready.")
+            task = asyncio.create_task(task_queue.add_task(task_type, user_id, func, update, context, *args, **kwargs))
+            if task_type == 'long_run':
+                await update.message.reply_text("Your request has been queued. You'll be notified when it's ready.")
+            # Don't await the task here, let it run in the background
         return wrapper
     return decorator
 

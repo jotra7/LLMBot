@@ -23,6 +23,7 @@ ADMIN_USER_IDS = [77446618]
 FLUX_MODELS = {
     "flux-realism": "fal-ai/flux-realism",
     "flux-pro": "fal-ai/flux-pro",
-    "Stable Diffusion V3":"fal-ai/stable-diffusion-v3-medium"
+    "Stable Diffusion V3":"fal-ai/stable-diffusion-v3-medium",
+    "Stanle Diffusion Fast":"fal-ai/fast-sdxl"
 }
 DEFAULT_FLUX_MODEL = "flux-realism"
