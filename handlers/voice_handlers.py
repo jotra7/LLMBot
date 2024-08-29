@@ -2,15 +2,37 @@ import logging
 import asyncio
 import time
 import requests
+import io
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from voice_cache import get_voices, get_default_voice
-from tts import generate_speech
 from performance_metrics import record_command_usage, record_error, record_response_time
 from queue_system import queue_task
 from config import ELEVENLABS_API_KEY, ELEVENLABS_SOUND_GENERATION_API_URL
 
 logger = logging.getLogger(__name__)
+
+def generate_speech(text, voice_id):
+    if not voice_id:
+        raise ValueError("No voice ID set. Please set a voice using /setvoice command.")
+    
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    headers = {
+        "Accept": "audio/mpeg",
+        "Content-Type": "application/json",
+        "xi-api-key": ELEVENLABS_API_KEY
+    }
+    data = {
+        "text": text,
+        "model_id": "eleven_monolingual_v1",
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.5
+        }
+    }
+    response = requests.post(url, json=data, headers=headers)
+    response.raise_for_status()
+    return io.BytesIO(response.content)
 
 async def list_voices(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("list_voices")
@@ -135,3 +157,6 @@ async def voice_button_callback(update: Update, context: ContextTypes.DEFAULT_TY
         voices = await get_voices()
         logger.info(f"User {update.effective_user.id} set voice to {voices.get(voice_id, 'Unknown')}")
         await query.edit_message_text(f"Voice set to {voices.get(voice_id, 'Unknown')}")
+
+# Ensure these functions are exported
+__all__ = ['list_voices', 'set_voice', 'current_voice', 'tts_command', 'generate_sound', 'voice_button_callback']
