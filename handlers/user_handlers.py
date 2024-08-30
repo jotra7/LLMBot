@@ -9,6 +9,7 @@ from database import get_user_conversations, save_conversation
 from utils import anthropic_client
 from performance_metrics import record_command_usage, record_response_time, record_model_usage, record_error
 from queue_system import queue_task
+from storage import delete_user_session
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Use /help to see available commands."
     )
 
+async def delete_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("delete_session")
+    user_id = update.effective_user.id
+    logger.info(f"User {user_id} requested session deletion")
+    
+    delete_user_session(user_id)
+    
+    # Clear the conversation history in the context
+    if 'conversation' in context.user_data:
+        del context.user_data['conversation']
+    
+    await update.message.reply_text("Your session history has been deleted. Your next message will start a new conversation.")
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("help")
     user_id = update.effective_user.id
@@ -43,6 +57,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "Available commands:\n"
         "/start - Start the bot\n"
         "/help - Show this help message\n"
+        "/delete_session - Delete your current chat session history\n"
         "/listmodels - List available Anthropic models\n"
         "/setmodel - Set the Anthropic model to use\n"
         "/currentmodel - Show the currently selected model\n"
@@ -61,6 +76,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/list_flux_models - List available Flux AI models\n"
         "/set_flux_model <model_name> - Set the Flux AI model to use\n"
         "/current_flux_model - Show the currently selected Flux AI model\n"
+
     )
     
     if is_admin:

@@ -109,3 +109,8 @@ def get_all_users():
         with conn.cursor() as cur:
             cur.execute("SELECT DISTINCT user_id FROM conversations")
             return [row[0] for row in cur.fetchall()]
+
+def delete_user_session(user_id: int):
+    session_key = f"user:{user_id}:session"
+    redis_client.delete(session_key)
+    logger.info(f"Deleted session for user {user_id}")
