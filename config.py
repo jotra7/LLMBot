@@ -11,6 +11,18 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 FAL_KEY = os.getenv("FAL_KEY") 
 ELEVENLABS_SOUND_GENERATION_API_URL = "https://api.elevenlabs.io/v1/sound-generation"
+
+# Database configuration
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+REDIS_DB = int(os.getenv("REDIS_DB", 0))
+
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", 5432))
+POSTGRES_DB = os.getenv("POSTGRES_DB", "your_db_name")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "your_username")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "your_password")
+
 # Check if the environment variables are set
 if not TELEGRAM_BOT_TOKEN or not ANTHROPIC_API_KEY:
     raise ValueError("Please set the TELEGRAM_BOT_TOKEN and ANTHROPIC_API_KEY environment variables.")

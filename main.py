@@ -4,6 +4,10 @@ import os
 from logging.handlers import RotatingFileHandler
 from bot import initialize_bot
 from model_cache import update_model_cache
+from storage import init_db
+from performance_metrics import init_performance_db
+from queue_system import start_task_queue
+from config import *
 
 # Set up logging to a separate debug file
 log_dir = "./logs"
@@ -23,15 +27,37 @@ async def main():
     try:
         debug_logger.info("Entering try block")
 
+        # Initialize the database
+        debug_logger.info("Initializing database")
+        init_db()
+        debug_logger.info("Database initialized successfully")
+
+        # Initialize performance metrics database
+        debug_logger.info("Initializing performance metrics database")
+        init_performance_db()
+        debug_logger.info("Performance metrics database initialized successfully")
+
         # Ensure the model cache is populated before starting the bot
         debug_logger.info("About to update model cache")
         await update_model_cache()
         debug_logger.info("Model cache updated successfully")
 
+        # Start the task queue
+        debug_logger.info("Starting task queue")
+        try:
+            worker_tasks = await start_task_queue()  # Await this coroutine
+            debug_logger.info("Task queue started successfully")
+        except Exception as e:
+            debug_logger.error(f"Failed to start task queue: {e}")
+            raise
+
         # Create the application
         debug_logger.info("About to create application")
         application = initialize_bot()
         debug_logger.info("Application created successfully")
+
+        # Add the worker tasks to the application
+        application.worker_tasks = worker_tasks
 
         debug_logger.info("About to initialize application")
         await application.initialize()
@@ -67,6 +93,15 @@ async def main():
                 debug_logger.info("Application shutdown completed")
             except Exception as e:
                 debug_logger.exception(f"Error during application shutdown: {str(e)}")
+        
+        # Cancel worker tasks
+        if 'worker_tasks' in locals():
+            debug_logger.info("Cancelling worker tasks")
+            for task in worker_tasks.values():
+                task.cancel()
+            await asyncio.gather(*worker_tasks.values(), return_exceptions=True)
+            debug_logger.info("Worker tasks cancelled")
+
         debug_logger.info("Bot stopped")
 
 if __name__ == "__main__":
