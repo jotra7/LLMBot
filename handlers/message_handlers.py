@@ -7,6 +7,7 @@ from utils import anthropic_client
 from database import save_conversation
 from performance_metrics import record_response_time, record_model_usage, record_error
 from queue_system import queue_task
+from storage import get_user_session, update_user_session
 
 logger = logging.getLogger(__name__)
 
@@ -27,18 +28,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     logger.info(f"User {user_id} sent message: '{user_message[:50]}...'")
     start_time = time.time()
-    
+
     try:
+        # Get user session and conversation history
+        session = get_user_session(user_id)
+        conversation_history = session.get('conversation', [])
+
+        # Prepare messages for API call
+        messages = conversation_history + [{"role": "user", "content": user_message}]
+
+        # Send typing action
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+
         response = anthropic_client.messages.create(
             model=model,
             max_tokens=1000,
             system=system_message,
-            messages=[
-                {"role": "user", "content": user_message}
-            ]
+            messages=messages
         )
-
         assistant_response = response.content[0].text
+
+        # Update conversation history
+        conversation_history.append({"role": "user", "content": user_message})
+        conversation_history.append({"role": "assistant", "content": assistant_response})
+        update_user_session(user_id, {'conversation': conversation_history[-10:]})  # Keep last 10 messages
+
         await update.message.reply_text(assistant_response)
 
         # Save the conversation

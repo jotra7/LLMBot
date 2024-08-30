@@ -11,13 +11,14 @@ from handlers import (
     admin_set_global_system_message, admin_view_logs, admin_restart_bot,
     admin_update_model_cache, admin_performance,
     list_flux_models, set_flux_model, current_flux_model, flux_model_callback, flux_command,
-    handle_message, error_handler
+    handle_message, error_handler, delete_session_command,
 )
 from utils import periodic_cache_update, periodic_voice_cache_update
 from database import init_db
 from performance_metrics import init_performance_db, save_performance_data
 from datetime import timedelta
 import model_cache
+from storage import delete_user_session
 from queue_system import start_task_queue, task_queue, check_queue_status
 
 # Set up logging
@@ -53,6 +54,7 @@ def create_application():
     application.add_handler(CommandHandler("current_flux_model", current_flux_model))
     application.add_handler(CommandHandler("queue_status", check_queue_status))
     application.add_handler(CommandHandler("video", generate_text_to_video))
+    application.add_handler(CommandHandler("delete_session", delete_session_command))
 
     # Admin command handlers
     application.add_handler(CommandHandler("admin_broadcast", admin_broadcast))
