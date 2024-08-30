@@ -17,7 +17,38 @@ performance_data = {
 def init_performance_db():
     conn = sqlite3.connect('performance_metrics.db')
     cursor = conn.cursor()
-    # ... (create tables code remains the same)
+    
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS response_times (
+        id INTEGER PRIMARY KEY,
+        timestamp REAL,
+        avg_duration REAL,
+        min_duration REAL,
+        max_duration REAL
+    )
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS model_usage (
+        model TEXT PRIMARY KEY,
+        count INTEGER
+    )
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS command_usage (
+        command TEXT PRIMARY KEY,
+        count INTEGER
+    )
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS errors (
+        error_type TEXT PRIMARY KEY,
+        count INTEGER
+    )
+    ''')
+
     conn.commit()
     conn.close()
     logger.info("Performance database initialized")

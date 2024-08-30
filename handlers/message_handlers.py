@@ -66,5 +66,5 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
     # Inform user
-    if update.effective_message:
+    if update and update.effective_message:
         await update.effective_message.reply_text("An error occurred while processing your request. The developer has been notified.")
