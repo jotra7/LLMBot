@@ -63,6 +63,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "/currentmodel - Show the currently selected model\n"
         "/tts <text> - Convert specific text to speech\n"        
         "/video <text> - Make a short video clip (Takes a long time)\n"
+        "/img2video - Convert an image to a short video (reply to an image with this command)\n"
         "/listvoices - List available voices\n"
         "/setvoice - Choose a voice for text-to-speech\n"
         "/currentvoice - Show the currently selected voice\n"

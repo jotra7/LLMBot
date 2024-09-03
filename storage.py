@@ -25,6 +25,30 @@ def get_postgres_connection():
 
 def init_db():
     try:
+        # First, connect to 'postgres' database to check if our database exists
+        conn = psycopg2.connect(
+            host=POSTGRES_HOST,
+            port=POSTGRES_PORT,
+            dbname='postgres',
+            user=POSTGRES_USER,
+            password=POSTGRES_PASSWORD
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+
+        # Check if database exists
+        cur.execute(f"SELECT 1 FROM pg_catalog.pg_database WHERE datname = '{POSTGRES_DB}'")
+        exists = cur.fetchone()
+        
+        if not exists:
+            cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(POSTGRES_DB)))
+            logger.info(f"Database {POSTGRES_DB} created.")
+
+        # Close connection to 'postgres'
+        cur.close()
+        conn.close()
+
+        # Now connect to our database and create table if not exists
         with get_postgres_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql.SQL('''
@@ -38,9 +62,10 @@ def init_db():
             conn.commit()
         logger.info("Database initialized successfully")
     except psycopg2.errors.InsufficientPrivilege as e:
-        logger.error(f"Insufficient privileges to create table: {e}")
+        logger.error(f"Insufficient privileges to create database or table: {e}")
         logger.error("Please grant necessary permissions to the database user.")
         logger.error("Run the following SQL commands as a superuser:")
+        logger.error(f"CREATE DATABASE {POSTGRES_DB};")
         logger.error(f"GRANT ALL PRIVILEGES ON DATABASE {POSTGRES_DB} TO {POSTGRES_USER};")
         logger.error(f"GRANT ALL PRIVILEGES ON SCHEMA public TO {POSTGRES_USER};")
         logger.error(f"ALTER USER {POSTGRES_USER} WITH CREATEDB;")

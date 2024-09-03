@@ -62,8 +62,8 @@ def queue_task(task_type='quick'):
             user_id = update.effective_user.id
             logger.info(f"Queueing {task_type} task for user {user_id}")
             task = asyncio.create_task(task_queue.add_task(task_type, user_id, func, update, context, *args, **kwargs))
-            if task_type == 'long_run':
-                await update.message.reply_text("Your request has been queued. You'll be notified when it's ready.")
+#            if task_type == 'long_run':
+#                await update.message.reply_text("Your request has been queued. You'll be notified when it's ready.")
             # Don't await the task here, let it run in the background
         return wrapper
     return decorator

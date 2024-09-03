@@ -11,7 +11,7 @@ from handlers import (
     admin_set_global_system_message, admin_view_logs, admin_restart_bot,
     admin_update_model_cache, admin_performance,
     list_flux_models, set_flux_model, current_flux_model, flux_model_callback, flux_command,
-    handle_message, error_handler, delete_session_command,
+    handle_message, error_handler, delete_session_command, img2video_command
 )
 from utils import periodic_cache_update, periodic_voice_cache_update
 from database import init_db
@@ -54,6 +54,7 @@ def create_application():
     application.add_handler(CommandHandler("current_flux_model", current_flux_model))
     application.add_handler(CommandHandler("queue_status", check_queue_status))
     application.add_handler(CommandHandler("video", generate_text_to_video))
+    application.add_handler(CommandHandler("img2video", img2video_command))
     application.add_handler(CommandHandler("delete_session", delete_session_command))
 
     # Admin command handlers
