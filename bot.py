@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 from config import TELEGRAM_BOT_TOKEN
 from handlers import (
@@ -11,7 +12,8 @@ from handlers import (
     admin_set_global_system_message, admin_view_logs, admin_restart_bot,
     admin_update_model_cache, admin_performance,
     list_flux_models, set_flux_model, current_flux_model, flux_model_callback, flux_command,
-    handle_message, error_handler, delete_session_command, img2video_command
+    handle_message, error_handler, delete_session_command, img2video_command, list_leonardo_models, set_leonardo_model, current_leonardo_model,
+    leonardo_generate_image, update_leonardo_model_cache, leonardo_model_callback
 )
 from utils import periodic_cache_update, periodic_voice_cache_update
 from database import init_db
@@ -56,7 +58,11 @@ def create_application():
     application.add_handler(CommandHandler("video", generate_text_to_video))
     application.add_handler(CommandHandler("img2video", img2video_command))
     application.add_handler(CommandHandler("delete_session", delete_session_command))
-
+    application.add_handler(CommandHandler("list_leonardo_models", list_leonardo_models))
+    application.add_handler(CommandHandler("set_leonardo_model", set_leonardo_model))
+    application.add_handler(CallbackQueryHandler(leonardo_model_callback, pattern="^leo_model:"))
+    application.add_handler(CommandHandler("current_leonardo_model", current_leonardo_model))
+    application.add_handler(CommandHandler("leo", leonardo_generate_image))
     # Admin command handlers
     application.add_handler(CommandHandler("admin_broadcast", admin_broadcast))
     application.add_handler(CommandHandler("admin_user_stats", admin_user_stats))
@@ -83,7 +89,8 @@ def create_application():
     # Schedule periodic tasks
     application.job_queue.run_repeating(periodic_cache_update, interval=timedelta(days=1), first=10)
     application.job_queue.run_repeating(periodic_voice_cache_update, interval=timedelta(days=1), first=10)
-
+    application.job_queue.run_once(lambda context: asyncio.create_task(update_leonardo_model_cache(context)), when=0)
+    application.job_queue.run_repeating(lambda context: asyncio.create_task(update_leonardo_model_cache(context)), interval=timedelta(days=1), first=timedelta(days=1))   
     async def save_performance_data_job(context):
         await save_performance_data()
 

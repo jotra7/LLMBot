@@ -54,35 +54,48 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     is_admin = user_id in ADMIN_USER_IDS
     
     help_text = (
-        "Available commands:\n"
+        "Available commands:\n\n"
+        "General Commands:\n"
         "/start - Start the bot\n"
         "/help - Show this help message\n"
         "/delete_session - Delete your current chat session history\n"
+        "/history - Show your recent conversations\n\n"
+
+        "Anthropic AI Model Commands:\n"
         "/listmodels - List available Anthropic models\n"
         "/setmodel - Set the Anthropic model to use\n"
         "/currentmodel - Show the currently selected model\n"
-        "/tts <text> - Convert specific text to speech\n"        
-        "/video <text> - Make a short video clip (Takes a long time)\n"
-        "/img2video - Convert an image to a short video (reply to an image with this command)\n"
+        "/set_system_message <message> - Set a custom system message for the AI\n"
+        "/get_system_message - Show the current system message\n\n"
+
+        "Text-to-Speech Commands:\n"
+        "/tts <text> - Convert specific text to speech\n"
         "/listvoices - List available voices\n"
         "/setvoice - Choose a voice for text-to-speech\n"
         "/currentvoice - Show the currently selected voice\n"
-        "/history - Show your recent conversations\n"
-        "/generate_image <prompt> - Generate an image based on a text prompt\n"
-        "/analyze_image - Analyze an image (use this command when sending an image or reply to an image with this command)\n"
-        "/set_system_message <message> - Set a custom system message for the AI\n"
-        "/get_system_message - Show the current system message\n"
-        "/generatesound <description> - Generate a sound based on the provided text description\n"
+        "/generatesound <description> - Generate a sound based on the provided text description\n\n"
+
+        "Image Generation Commands:\n"
+        "/generate_image <prompt> - Generate an image based on a text prompt (OpenAI)\n"
         "/flux <prompt> - Generate a realistic image using the Flux AI model\n"
         "/list_flux_models - List available Flux AI models\n"
         "/set_flux_model <model_name> - Set the Flux AI model to use\n"
         "/current_flux_model - Show the currently selected Flux AI model\n"
+        "/list_leonardo_models - List available Leonardo.ai models\n"
+        "/set_leonardo_model - Select a Leonardo.ai model from a menu\n"        "/current_leonardo_model - Show the currently selected Leonardo.ai model\n"
+        "/leo <prompt> - Generate an image using Leonardo.ai\n\n"
 
+        "Image Analysis Command:\n"
+        "/analyze_image - Analyze an image (use this command when sending an image or reply to an image with this command)\n\n"
+
+        "Video Generation Commands:\n"
+        "/video <text> - Make a short video clip (Takes a long time)\n"
+        "/img2video - Convert an image to a short video (reply to an image with this command)\n"
     )
     
     if is_admin:
         admin_help_text = (
-            "\n\nAdmin commands:\n"
+            "\nAdmin Commands:\n"
             "/admin_broadcast <message> - Send a message to all users\n"
             "/admin_user_stats - View user statistics\n"
             "/admin_ban <user_id> - Ban a user\n"
