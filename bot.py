@@ -10,10 +10,10 @@ from handlers import (
     generate_text_to_video,
     admin_broadcast, admin_user_stats, admin_ban_user, admin_unban_user,
     admin_set_global_system_message, admin_view_logs, admin_restart_bot,
-    admin_update_model_cache, admin_performance,
+    admin_update_model_cache, admin_performance, notify_admins, on_startup,
     list_flux_models, set_flux_model, current_flux_model, flux_model_callback, flux_command,
     handle_message, error_handler, delete_session_command, img2video_command, list_leonardo_models, set_leonardo_model, current_leonardo_model,
-    leonardo_generate_image, update_leonardo_model_cache, leonardo_model_callback
+    leonardo_generate_image, update_leonardo_model_cache, leonardo_model_callback, leonardo_unzoom
 )
 from utils import periodic_cache_update, periodic_voice_cache_update
 from database import init_db
@@ -63,6 +63,8 @@ def create_application():
     application.add_handler(CallbackQueryHandler(leonardo_model_callback, pattern="^leo_model:"))
     application.add_handler(CommandHandler("current_leonardo_model", current_leonardo_model))
     application.add_handler(CommandHandler("leo", leonardo_generate_image))
+    application.add_handler(CommandHandler("unzoom", leonardo_unzoom))
+
     # Admin command handlers
     application.add_handler(CommandHandler("admin_broadcast", admin_broadcast))
     application.add_handler(CommandHandler("admin_user_stats", admin_user_stats))
@@ -95,7 +97,7 @@ def create_application():
         await save_performance_data()
 
     application.job_queue.run_repeating(save_performance_data_job, interval=timedelta(hours=1), first=10)
-
+    application.job_queue.run_once(on_startup, when=0)
     return application
 
 def initialize_bot():
@@ -111,5 +113,5 @@ def initialize_bot():
 
     # Add the worker tasks to the application so they don't get garbage collected
     application.worker_tasks = worker_tasks
-
+    application.job_queue.run_once(notify_admins, when=1)
     return application

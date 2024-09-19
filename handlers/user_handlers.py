@@ -1,6 +1,6 @@
 import logging
 import time
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from config import DEFAULT_MODEL, DEFAULT_SYSTEM_MESSAGE, ADMIN_USER_IDS
 from model_cache import get_models
@@ -14,24 +14,35 @@ from storage import delete_user_session
 logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    record_command_usage("start")
     user = update.effective_user
     context.user_data['model'] = DEFAULT_MODEL
-    models = await get_models()
-    voices = await get_voices()
-    default_voice = get_default_voice()
-    if default_voice:
-        context.user_data['voice_id'] = default_voice
-    else:
-        logger.warning(f"No default voice available for user {user.id}")
-        context.user_data['voice_id'] = None
-    logger.info(f"User {user.id} started the bot")
-    await update.message.reply_html(
-        f"Hello {user.mention_html()}! I'm a bot powered by Anthropic and OpenAI.\n"
-        f"Your current model is set to {models.get(context.user_data['model'], 'Unknown')}.\n"
-        f"Your current voice is set to {voices.get(context.user_data['voice_id'], 'Not set')}.\n"
-        "Use /help to see available commands."
+    is_admin = user.id in ADMIN_USER_IDS
+
+    welcome_message = (
+        f"👋 Welcome, {user.mention_html()}! I'm a multi-functional AI assistant bot.\n\n"
+        "🧠 I can engage in conversations, answer questions, and help with various tasks.\n"
+        "🎨 I can generate and analyze images, convert text to speech, and even create short video clips!\n\n"
+        "Here are some things you can do:\n"
+        "• Simply send me a message to start a conversation\n"
+        "• Use /help to see all available commands\n"
+        "• Try /generate_image to create images from text descriptions\n"
+        "• Use /tts to convert text to speech\n\n"
+        "Feel free to explore and don't hesitate to ask if you need any assistance!"
     )
+
+    keyboard = [
+        [InlineKeyboardButton("📚 View All Commands", callback_data="view_commands")],
+        [InlineKeyboardButton("🎨 Generate Image", callback_data="generate_image")],
+        [InlineKeyboardButton("🗣️ Text to Speech", callback_data="text_to_speech")]
+    ]
+
+    if is_admin:
+        keyboard.append([InlineKeyboardButton("🛠️ Admin Panel", callback_data="admin_panel")])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_html(welcome_message, reply_markup=reply_markup)
+    logger.info(f"User {user.id} started the bot")
 
 async def delete_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("delete_session")
@@ -47,69 +58,112 @@ async def delete_session_command(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text("Your session history has been deleted. Your next message will start a new conversation.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    record_command_usage("help")
     user_id = update.effective_user.id
-    logger.info(f"User {user_id} requested help")
-    
     is_admin = user_id in ADMIN_USER_IDS
-    
+
     help_text = (
-        "Available commands:\n\n"
-        "General Commands:\n"
-        "/start - Start the bot\n"
-        "/help - Show this help message\n"
-        "/delete_session - Delete your current chat session history\n"
-        "/history - Show your recent conversations\n\n"
+        "🤖 Bot Commands and Capabilities 🤖\n\n"
+        "🗨️ Conversation:\n"
+        "• Simply send a message to chat with me\n"
+        "• /set_system_message - Customize my behavior\n"
+        "• /get_system_message - View current system message\n\n"
 
-        "Anthropic AI Model Commands:\n"
-        "/listmodels - List available Anthropic models\n"
-        "/setmodel - Set the Anthropic model to use\n"
-        "/currentmodel - Show the currently selected model\n"
-        "/set_system_message <message> - Set a custom system message for the AI\n"
-        "/get_system_message - Show the current system message\n\n"
+        "🧠 AI Models:\n"
+        "• /listmodels - View available AI models\n"
+        "• /setmodel - Change the AI model\n"
+        "• /currentmodel - Check current model\n\n"
 
-        "Text-to-Speech Commands:\n"
-        "/tts <text> - Convert specific text to speech\n"
-        "/listvoices - List available voices\n"
-        "/setvoice - Choose a voice for text-to-speech\n"
-        "/currentvoice - Show the currently selected voice\n"
-        "/generatesound <description> - Generate a sound based on the provided text description\n\n"
+        "🎙️ Text-to-Speech:\n"
+        "• /tts <text> - Convert text to speech\n"
+        "• /listvoices - View available voices\n"
+        "• /setvoice - Choose a voice\n"
+        "• /currentvoice - Check current voice\n\n"
 
-        "Image Generation Commands:\n"
-        "/generate_image <prompt> - Generate an image based on a text prompt (OpenAI)\n"
-        "/flux <prompt> - Generate a realistic image using the Flux AI model\n"
-        "/list_flux_models - List available Flux AI models\n"
-        "/set_flux_model <model_name> - Set the Flux AI model to use\n"
-        "/current_flux_model - Show the currently selected Flux AI model\n"
-        "/list_leonardo_models - List available Leonardo.ai models\n"
-        "/set_leonardo_model - Select a Leonardo.ai model from a menu\n"        "/current_leonardo_model - Show the currently selected Leonardo.ai model\n"
-        "/leo <prompt> - Generate an image using Leonardo.ai\n\n"
+        "🎨 Image Generation:\n"
+        "• /generate_image <prompt> - Create image from text\n"
+        "• /flux <prompt> - Generate realistic image\n"
+        "• /list_flux_models - View Flux AI models\n"
+        "• /set_flux_model - Set Flux AI model\n"
+        "• /current_flux_model - Check current Flux model\n\n"
 
-        "Image Analysis Command:\n"
-        "/analyze_image - Analyze an image (use this command when sending an image or reply to an image with this command)\n\n"
+        "🎥 Video Generation:\n"
+        "• /video <prompt> - Create short video clip\n"
+        "• /img2video - Convert image to video\n\n"
 
-        "Video Generation Commands:\n"
-        "/video <text> - Make a short video clip (Takes a long time)\n"
-        "/img2video - Convert an image to a short video (reply to an image with this command)\n"
+        "🔍 Image Analysis:\n"
+        "• /analyze_image - Analyze an image (reply to an image)\n\n"
+
+        "📊 User Data:\n"
+        "• /history - View your chat history\n"
+        "• /delete_session - Clear your current session\n\n"
+
+        "ℹ️ Other Commands:\n"
+        "• /start - Welcome message and quick actions\n"
+        "• /help - Display this help message\n"
     )
-    
-    if is_admin:
-        admin_help_text = (
-            "\nAdmin Commands:\n"
-            "/admin_broadcast <message> - Send a message to all users\n"
-            "/admin_user_stats - View user statistics\n"
-            "/admin_ban <user_id> - Ban a user\n"
-            "/admin_unban <user_id> - Unban a user\n"
-            "/admin_set_global_system <message> - Set the global default system message\n"
-            "/admin_logs - View recent logs\n"
-            "/admin_restart - Restart the bot\n"
-            "/admin_update_models - Update the model cache\n"
-            "/admin_performance - View performance metrics"
-        )
-        help_text += admin_help_text
-    
-    await update.message.reply_text(help_text)
 
+    if is_admin:
+        admin_help = (
+            "\n🛠️ Admin Commands:\n"
+            "• /admin_broadcast - Send message to all users\n"
+            "• /admin_user_stats - View user statistics\n"
+            "• /admin_ban - Ban a user\n"
+            "• /admin_unban - Unban a user\n"
+            "• /admin_set_global_system - Set global system message\n"
+            "• /admin_logs - View recent logs\n"
+            "• /admin_restart - Restart the bot\n"
+            "• /admin_update_models - Update model cache\n"
+            "• /admin_performance - View performance metrics\n"
+        )
+        help_text += admin_help
+
+    keyboard = [
+        [InlineKeyboardButton("🎨 Generate Image", callback_data="generate_image")],
+        [InlineKeyboardButton("🗣️ Text to Speech", callback_data="text_to_speech")],
+        [InlineKeyboardButton("🎥 Generate Video", callback_data="generate_video")]
+    ]
+
+    if is_admin:
+        keyboard.append([InlineKeyboardButton("🛠️ Admin Panel", callback_data="admin_panel")])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(help_text, reply_markup=reply_markup)
+    logger.info(f"User {user_id} requested help")
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "view_commands":
+        await help_command(update, context)
+    elif query.data == "generate_image":
+        await query.message.reply_text("To generate an image, use the command:\n/generate_image <your image description>")
+    elif query.data == "text_to_speech":
+        await query.message.reply_text("To convert text to speech, use the command:\n/tts <your text>")
+    elif query.data == "generate_video":
+        await query.message.reply_text("To generate a video, use the command:\n/video <your video description>")
+    elif query.data == "admin_panel":
+        if update.effective_user.id in ADMIN_USER_IDS:
+            admin_panel_text = (
+                "🛠️ Admin Panel 🛠️\n\n"
+                "Here are your admin capabilities:\n"
+                "• /admin_broadcast - Send a message to all users\n"
+                "• /admin_user_stats - View user statistics\n"
+                "• /admin_ban - Ban a user\n"
+                "• /admin_unban - Unban a user\n"
+                "• /admin_set_global_system - Set the global system message\n"
+                "• /admin_logs - View recent logs\n"
+                "• /admin_restart - Restart the bot\n"
+                "• /admin_update_models - Update the model cache\n"
+                "• /admin_performance - View performance metrics"
+            )
+            await query.message.reply_text(admin_panel_text)
+        else:
+            await query.message.reply_text("You don't have permission to access the admin panel.")
+    else:
+        await query.message.reply_text("I'm not sure how to handle that request. Please try using a command from the /help list.")
+        
 async def get_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("history")
     user_id = update.effective_user.id

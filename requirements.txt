@@ -6,4 +6,6 @@ openai
 fal-client
 redis
 psycopg2-binary
+pillow
+aiohttp
 
