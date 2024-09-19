@@ -344,8 +344,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(f"An error occurred: {str(e)}")
         record_error("message_processing_error")
 
-conv_handler = ConversationHandler(per_message=True,
-    entry_points=[CommandHandler("start", start), CommandHandler("help", help_menu)],
+conv_handler = ConversationHandler(
+    
+    entry_points=[CallbackQueryHandler(start, pattern="^start$"), CallbackQueryHandler(help_menu, pattern="^help$")],
+    
     states={
         CHOOSING: [
             CallbackQueryHandler(button_callback),
@@ -355,5 +357,5 @@ conv_handler = ConversationHandler(per_message=True,
             CallbackQueryHandler(button_callback),
         ],
     },
-    fallbacks=[CommandHandler("start", start)],
+    fallbacks=[CallbackQueryHandler(start, pattern="^start$")],
 )
