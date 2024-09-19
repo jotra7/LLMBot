@@ -344,7 +344,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(f"An error occurred: {str(e)}")
         record_error("message_processing_error")
 
-conv_handler = ConversationHandler(
+conv_handler = ConversationHandler(per_message=True,
     entry_points=[CommandHandler("start", start), CommandHandler("help", help_menu)],
     states={
         CHOOSING: [
