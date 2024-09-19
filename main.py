@@ -53,12 +53,13 @@ async def main():
 
         # Create the application
         debug_logger.info("About to create application")
-        application = initialize_bot()
+        application = await initialize_bot()  # Await the initialize_bot function
         debug_logger.info("Application created successfully")
 
         # Add the worker tasks to the application
         application.worker_tasks = worker_tasks
 
+        # Initialize the application
         debug_logger.info("About to initialize application")
         await application.initialize()
         debug_logger.info("Application initialized successfully")
@@ -82,12 +83,13 @@ async def main():
     finally:
         debug_logger.info("Entering finally block")
         debug_logger.info("Stopping bot")
-        if 'application' in locals():
+        if 'application' in locals() and hasattr(application, 'stop'):
             try:
                 await application.stop()
                 debug_logger.info("Application stop completed")
             except Exception as e:
                 debug_logger.exception(f"Error during application stop: {str(e)}")
+        if 'application' in locals() and hasattr(application, 'shutdown'):
             try:
                 await application.shutdown()
                 debug_logger.info("Application shutdown completed")

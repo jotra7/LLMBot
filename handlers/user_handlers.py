@@ -17,7 +17,7 @@ CHOOSING, GUIDED_TOUR = range(2)
 # Define help categories
 help_categories = {
     'conversation': "🗨️ Conversation",
-    'ai_models': "🧠 AI Models",
+    'ai_models': "🧠 AI Models",  # Correct key
     'tts': "🎙️ Text-to-Speech",
     'image_gen': "🎨 Image Generation",
     'video_gen': "🎥 Video Generation",
@@ -26,7 +26,6 @@ help_categories = {
     'other': "ℹ️ Other Commands",
     'admin': "🛠️ Admin Commands"
 }
-
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -69,11 +68,11 @@ async def help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     help_text = "📚 Help Menu\n\nChoose a category to learn more:"
 
-    keyboard = [
-        [InlineKeyboardButton(name, callback_data=f"help_{cat}")] 
-        for cat, name in help_categories.items() 
-        if cat != 'admin' or (cat == 'admin' and is_admin)
-    ]
+    keyboard = []
+    for cat, name in help_categories.items():
+        # Use the correct category key (e.g., 'ai_models')
+        keyboard.append([InlineKeyboardButton(name, callback_data=f"help_{cat}")])
+
     keyboard.append([InlineKeyboardButton("🔙 Back to Start", callback_data="start")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -90,88 +89,104 @@ async def show_help_category(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
 
-    category = query.data.split('_')[1]
+    # Extract the full category key
+    category = query.data.split('_', 1)[1]  # Change here
+
+    logger.info(f"User requested help for category: {category}")
+
+    # Fetch the help text for the category
     help_text = get_help_text(category)
 
     keyboard = [[InlineKeyboardButton("🔙 Back to Help Menu", callback_data="help_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await query.edit_message_text(help_text, reply_markup=reply_markup)
+    if help_text != "Category not found.":  # Change here
+        await query.edit_message_text(help_text, reply_markup=reply_markup)
+    else:
+        await query.edit_message_text(f"Category '{category}' not found.", reply_markup=reply_markup)
+
     return CHOOSING
 
 def get_help_text(category):
     help_texts = {
         'conversation': (
             "🗨️ Conversation\n\n"
-            "• Simply send a message to chat with me\n"
-            "• /set_system_message - Customize my behavior\n"
-            "• /get_system_message - View current system message\n\n"
-            "The system message helps define my personality and behavior. "
-            "You can set it to make me more formal, casual, or even role-play as a specific character!"
+            "• Simply send a message to chat with me.\n"
+            "• /set_system_message - Customize my behavior.\n"
+            "• /get_system_message - View the current system message.\n\n"
+            "You can set a system message to influence how I respond!"
         ),
-        'ai_models': (
+        'ai_models': (  # Make sure 'ai_models' is used as the key
             "🧠 AI Models\n\n"
-            "• /listmodels - View available AI models\n"
-            "• /setmodel - Change the AI model\n"
-            "• /currentmodel - Check current model\n\n"
-            "Different models have different capabilities and specialties. "
-            "Experiment to find the one that works best for your needs!"
+            "• /listmodels - View available AI models.\n"
+            "• /setmodel - Change the AI model.\n"
+            "• /currentmodel - Check the current model.\n\n"
+            "Experiment with different models to suit your needs!"
         ),
         'tts': (
             "🎙️ Text-to-Speech\n\n"
-            "• /tts <text> - Convert text to speech\n"
-            "• /listvoices - View available voices\n"
-            "• /setvoice - Choose a voice\n"
-            "• /currentvoice - Check current voice\n\n"
-            "You can have me speak in different voices. Try them out to find your favorite!"
+            "• /tts <text> - Convert text to speech.\n"
+            "• /listvoices - View available voices.\n"
+            "• /setvoice - Choose a voice.\n"
+            "• /currentvoice - Check the current voice.\n\n"
+            "You can make me speak with different voices!"
         ),
         'image_gen': (
             "🎨 Image Generation\n\n"
-            "• /generate_image <prompt> - Create image from text\n"
-            "• /flux <prompt> - Generate realistic image\n"
-            "• /list_flux_models - View Flux AI models\n"
-            "• /set_flux_model - Set Flux AI model\n"
-            "• /current_flux_model - Check current Flux model\n\n"
-            "Let your imagination run wild! Describe any scene or object, and I'll create it for you."
+            "• /generate_image <prompt> - Create an image from text.\n"
+            "• /flux <prompt> - Generate a realistic image.\n"
+            "• /list_flux_models - View available Flux AI models.\n"
+            "• /set_flux_model - Set the Flux AI model.\n"
+            "• /current_flux_model - Check the current Flux model.\n"
+            "• /img2video - Convert an image into a video.\n\n"
+            "💡 **How to Use**:\n"
+            "1. Upload or send an image.\n"
+            "2. Use the command `/img2video` to convert it into a short video.\n\n"
+            "Let your imagination run wild by transforming images into dynamic clips!"
         ),
         'video_gen': (
             "🎥 Video Generation\n\n"
-            "• /video <prompt> - Create short video clip\n"
-            "• /img2video - Convert image to video\n\n"
-            "Bring your ideas to life with short animated clips or turn still images into videos!"
+            "• /video <prompt> - Create a short video clip.\n"
+            "• /img2video - Convert an image into a video.\n\n"
+            "Generate stunning video content from text descriptions or images!"
         ),
         'image_analysis': (
             "🔍 Image Analysis\n\n"
-            "• /analyze_image - Analyze an image (reply to an image)\n\n"
-            "Send me any image, and I'll describe what I see in detail."
+            "• /analyze_image - Analyze an image (reply to an image).\n\n"
+            "💡 **How to Use**:\n"
+            "1. Upload or send an image.\n"
+            "2. Use `/analyze_image` by replying to the image.\n"
+            "I will provide a detailed description of the image, including objects and features I can detect!"
         ),
         'user_data': (
             "📊 User Data\n\n"
-            "• /history - View your chat history\n"
-            "• /delete_session - Clear your current session\n\n"
-            "Manage your data and conversation history with these commands."
+            "• /history - View your chat history.\n"
+            "• /delete_session - Clear your current session.\n\n"
+            "Easily manage your interaction data with me."
         ),
         'other': (
             "ℹ️ Other Commands\n\n"
-            "• /start - Welcome message and quick actions\n"
-            "• /help - Display this help message\n\n"
-            "These commands help you navigate the bot's features."
+            "• /start - Welcome message and quick actions.\n"
+            "• /help - Display this help message.\n\n"
+            "These commands help you navigate my features!"
         ),
         'admin': (
             "🛠️ Admin Commands\n\n"
-            "• /admin_broadcast - Send message to all users\n"
-            "• /admin_user_stats - View user statistics\n"
-            "• /admin_ban - Ban a user\n"
-            "• /admin_unban - Unban a user\n"
-            "• /admin_set_global_system - Set global system message\n"
-            "• /admin_logs - View recent logs\n"
-            "• /admin_restart - Restart the bot\n"
-            "• /admin_update_models - Update model cache\n"
-            "• /admin_performance - View performance metrics\n\n"
-            "These commands are only available to bot administrators."
+            "• /admin_broadcast - Send a message to all users.\n"
+            "• /admin_user_stats - View user statistics.\n"
+            "• /admin_ban - Ban a user.\n"
+            "• /admin_unban - Unban a user.\n"
+            "• /admin_set_global_system - Set the global system message.\n"
+            "• /admin_logs - View recent logs.\n"
+            "• /admin_restart - Restart the bot.\n"
+            "• /admin_update_models - Update model cache.\n"
+            "• /admin_performance - View performance metrics.\n\n"
+            "Admin-only commands for bot maintenance and management."
         )
     }
     return help_texts.get(category, "Category not found.")
+
+
 
 async def guided_tour(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -252,22 +267,21 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.edit_message_text("You don't have permission to access the admin panel.")
     else:
         await query.edit_message_text("I'm not sure how to handle that request. Please try using a command from the /help list.")
-    
+
     return CHOOSING
 
 async def delete_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("delete_session")
     user_id = update.effective_user.id
     logger.info(f"User {user_id} requested session deletion")
-    
+
     delete_user_session(user_id)
-    
+
     # Clear the conversation history in the context
     if 'conversation' in context.user_data:
         del context.user_data['conversation']
-    
-    await update.message.reply_text("Your session history has been deleted. Your next message will start a new conversation.")
 
+    await update.message.reply_text("Your session history has been deleted. Your next message will start a new conversation.")
 
 async def get_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("history")
@@ -311,13 +325,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if update.message.chat.type != 'private':
         bot = await context.bot.get_me()
         bot_username = bot.username
-        if not f"@{bot_username}" in user_message:
+        if f"@{bot_username}" not in user_message:
             return
         user_message = user_message.replace(f"@{bot_username}", "").strip()
 
     logger.info(f"User {user_id} sent message: '{user_message[:50]}...'")
     start_time = time.time()
-    
+
     try:
         response = anthropic_client.messages.create(
             model=model,
@@ -340,22 +354,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         record_model_usage(model)
 
     except Exception as e:
-        logger.error(f"Error processing message for user {user_id}: {str(e)}")
-        await update.message.reply_text(f"An error occurred: {str(e)}")
+        logger.error(f"Error processing message for user {user_id}: {e}")
+        await update.message.reply_text(f"An error occurred: {e}")
         record_error("message_processing_error")
 
 conv_handler = ConversationHandler(
-    
-    entry_points=[CallbackQueryHandler(start, pattern="^start$"), CallbackQueryHandler(help_menu, pattern="^help$")],
-    
+    entry_points=[
+        CommandHandler("start", start),
+        CommandHandler("help", help_menu),
+    ],
     states={
         CHOOSING: [
-            CallbackQueryHandler(button_callback),
+            CallbackQueryHandler(button_callback, pattern="^help_|^guided_tour|^start$"),
         ],
         GUIDED_TOUR: [
             CallbackQueryHandler(guided_tour, pattern="^tour_"),
-            CallbackQueryHandler(button_callback),
         ],
     },
-    fallbacks=[CallbackQueryHandler(start, pattern="^start$")],
+    fallbacks=[
+        CommandHandler("start", start),
+        CommandHandler("help", help_menu),
+    ]
 )
+

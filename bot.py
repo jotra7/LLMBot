@@ -41,7 +41,7 @@ def create_application():
     application.add_handler(conv_handler)
 
     # Add a separate handler for the help command
-    application.add_handler(CommandHandler("help", help_menu))
+    application.add_handler(CommandHandler("help", help_menu))  # Reintroduced to handle /help command  # Commented out to avoid conflict with CallbackQueryHandler
 
     # Add other command handlers
     application.add_handler(CommandHandler("listmodels", list_models))
@@ -82,9 +82,12 @@ def create_application():
     application.add_handler(CommandHandler("admin_performance", admin_performance))
 
     # Add callback query handlers
-    application.add_handler(CallbackQueryHandler(voice_button_callback, pattern=r"^voice_"))
-    application.add_handler(CallbackQueryHandler(flux_model_callback, pattern=r"^set_flux_model:"))
-    application.add_handler(CallbackQueryHandler(leonardo_model_callback, pattern="^leo_model:"))
+    # Removed CallbackQueryHandler as part of simplified approach
+# application.add_handler(CallbackQueryHandler(voice_button_callback, pattern=r"^voice_"))
+    # Removed CallbackQueryHandler as part of simplified approach
+# application.add_handler(CallbackQueryHandler(flux_model_callback, pattern=r"^set_flux_model:"))
+    # Removed CallbackQueryHandler as part of simplified approach
+# application.add_handler(CallbackQueryHandler(leonardo_model_callback, pattern="^leo_model:"))
 
     # Add message handler
     application.add_handler(MessageHandler(
@@ -109,13 +112,13 @@ def create_application():
 
     return application
 
-def initialize_bot():
+async def initialize_bot():
     # Initialize the database
     init_db()
     init_performance_db()
 
-    # Start the task queue and keep a reference to the worker tasks
-    worker_tasks = start_task_queue()
+    # Start the task queue and await the worker tasks
+    worker_tasks = await start_task_queue()  # Await here since it's an async function
 
     # Create the application
     application = create_application()
@@ -128,9 +131,4 @@ def initialize_bot():
 
     return application
 
-def main():
-    application = initialize_bot()
-    application.run_polling()
 
-if __name__ == '__main__':
-    main()
