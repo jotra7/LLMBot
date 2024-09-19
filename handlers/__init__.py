@@ -1,4 +1,4 @@
-from .user_handlers import start, help_command, get_history, set_system_message, get_system_message, delete_session_command
+from .user_handlers import start, get_history, set_system_message, get_system_message, delete_session_command, conv_handler, help_menu
 from .model_handlers import list_models, set_model, current_model, button_callback
 from .voice_handlers import tts_command, list_voices, set_voice, current_voice, voice_button_callback
 from .image_handlers import generate_image, analyze_image
@@ -13,7 +13,7 @@ from .message_handlers import handle_message, error_handler
 from .leonardo_handlers import list_leonardo_models, set_leonardo_model,leonardo_model_callback, current_leonardo_model, leonardo_generate_image, update_leonardo_model_cache, leonardo_unzoom
 
 __all__ = [
-    'start', 'help_command', 'get_history', 'set_system_message', 'get_system_message',
+    'start', 'help_command', 'get_history', 'set_system_message', 'get_system_message', 'conv_handler', 'help_menu'
     'list_models', 'set_model', 'current_model', 'button_callback',
     'tts_command', 'list_voices', 'set_voice', 'current_voice', 'voice_button_callback',
     'generate_image', 'analyze_image',
