@@ -34,6 +34,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+httpx_logger = logging.getLogger("httpx")
+httpx_logger.setLevel(logging.WARNING)
+
 def create_application():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -83,11 +86,11 @@ def create_application():
 
     # Add callback query handlers
     # Removed CallbackQueryHandler as part of simplified approach
-# application.add_handler(CallbackQueryHandler(voice_button_callback, pattern=r"^voice_"))
+    application.add_handler(CallbackQueryHandler(voice_button_callback, pattern=r"^voice_"))
     # Removed CallbackQueryHandler as part of simplified approach
-# application.add_handler(CallbackQueryHandler(flux_model_callback, pattern=r"^set_flux_model:"))
+    application.add_handler(CallbackQueryHandler(flux_model_callback, pattern=r"^set_flux_model:"))
     # Removed CallbackQueryHandler as part of simplified approach
-# application.add_handler(CallbackQueryHandler(leonardo_model_callback, pattern="^leo_model:"))
+    application.add_handler(CallbackQueryHandler(leonardo_model_callback, pattern="^leo_model:"))
 
     # Add message handler
     application.add_handler(MessageHandler(
