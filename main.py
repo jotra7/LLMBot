@@ -7,7 +7,7 @@ from model_cache import update_model_cache
 from storage import init_db
 from performance_metrics import init_performance_db
 from queue_system import start_task_queue
-from config import *
+from config import ADMIN_USER_IDS
 
 # Set up logging to a separate debug file
 log_dir = "./logs"
@@ -39,7 +39,11 @@ async def main():
 
         # Ensure the model cache is populated before starting the bot
         debug_logger.info("About to update model cache")
-        await update_model_cache()
+        try:
+            await update_model_cache()
+        except Exception as e:
+            debug_logger.error(f'Error updating model cache: {str(e)}')
+            raise
         debug_logger.info("Model cache updated successfully")
 
         # Start the task queue
@@ -65,18 +69,31 @@ async def main():
         debug_logger.info("Application initialized successfully")
 
         debug_logger.info("About to start application")
-        await application.start()
+        try:
+            await application.start()
+        except Exception as e:
+            debug_logger.error(f'Error starting application: {str(e)}')
+            raise
         debug_logger.info("Application started successfully")
 
         debug_logger.info("About to start polling")
         await application.updater.start_polling()
         debug_logger.info("Polling started successfully")
 
+        # Notify admins that the bot has been restarted
+        debug_logger.info("Bot restarted or rebooted successfully. Notifying admins.")
+        for admin_id in ADMIN_USER_IDS:
+            try:
+                await application.bot.send_message(chat_id=admin_id, text='🚀 Bot has been rebooted or restarted successfully!')
+                debug_logger.info(f'Sent restart notification to admin {admin_id}')
+            except Exception as e:
+                debug_logger.error(f'Failed to send restart notification to admin {admin_id}: {str(e)}')
+
         debug_logger.info("Bot is running. Entering main loop.")
 
         # Keep the bot running
         while True:
-            debug_logger.debug("Main loop iteration")
+#            debug_logger.debug("Main loop iteration")
             await asyncio.sleep(10)  # Log every 10 seconds to reduce log size
     except Exception as e:
         debug_logger.exception(f"An error occurred in main: {str(e)}")
@@ -86,9 +103,10 @@ async def main():
         if 'application' in locals() and hasattr(application, 'stop'):
             try:
                 await application.stop()
-                debug_logger.info("Application stop completed")
             except Exception as e:
-                debug_logger.exception(f"Error during application stop: {str(e)}")
+                debug_logger.error(f'Error during application stop: {str(e)}')
+                raise
+            debug_logger.info("Application stop completed")
         if 'application' in locals() and hasattr(application, 'shutdown'):
             try:
                 await application.shutdown()
