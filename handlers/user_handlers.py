@@ -116,7 +116,7 @@ def get_help_text(category):
             "• /get_system_message - View the current system message.\n\n"
             "You can set a system message to influence how I respond!"
         ),
-        'ai_models': (  # Make sure 'ai_models' is used as the key
+        'ai_models': (
             "🧠 AI Models\n\n"
             "• /listmodels - View available AI models.\n"
             "• /setmodel - Change the AI model.\n"
@@ -128,34 +128,36 @@ def get_help_text(category):
             "• /tts <text> - Convert text to speech.\n"
             "• /listvoices - View available voices.\n"
             "• /setvoice - Choose a voice.\n"
-            "• /currentvoice - Check the current voice.\n\n"
-            "You can make me speak with different voices!"
+            "• /currentvoice - Check the current voice.\n"
+            "• /generate_sound <description> - Generate a sound based on description.\n\n"
+            "You can make me speak with different voices and generate sounds!"
         ),
         'image_gen': (
             "🎨 Image Generation\n\n"
-            "• /generate_image <prompt> - Create an image from text.\n"
-            "• /flux <prompt> - Generate a realistic image.\n"
+            "• /generate_image <prompt> - Create an image from text using DALL-E 3.\n"
+            "• /flux <prompt> - Generate a realistic image using Fal.ai's Flux model.\n"
             "• /list_flux_models - View available Flux AI models.\n"
             "• /set_flux_model - Set the Flux AI model.\n"
             "• /current_flux_model - Check the current Flux model.\n"
-            "• /img2video - Convert an image into a video.\n\n"
-            "💡 **How to Use**:\n"
-            "1. Upload or send an image.\n"
-            "2. Use the command `/img2video` to convert it into a short video.\n\n"
-            "Let your imagination run wild by transforming images into dynamic clips!"
+            "• /leo <prompt> - Generate an image using Leonardo.ai.\n"
+            "• /list_leonardo_models - View available Leonardo.ai models.\n"
+            "• /set_leonardo_model - Set the Leonardo.ai model.\n"
+            "• /current_leonardo_model - Check the current Leonardo.ai model.\n"
+            "• /unzoom - Unzoom a Leonardo.ai generated image.\n\n"
+            "Let your imagination run wild with various image generation options!"
         ),
         'video_gen': (
             "🎥 Video Generation\n\n"
-            "• /video <prompt> - Create a short video clip.\n"
-            "• /img2video - Convert an image into a video.\n\n"
+            "• /video <prompt> - Create a short video clip based on a text prompt.\n"
+            "• /img2video - Convert an image into a short video clip.\n\n"
             "Generate stunning video content from text descriptions or images!"
         ),
         'image_analysis': (
             "🔍 Image Analysis\n\n"
-            "• /analyze_image - Analyze an image (reply to an image).\n\n"
-            "💡 **How to Use**:\n"
+            "• /analyze_image - Analyze an image (reply to an image with this command).\n\n"
+            "💡 How to Use:\n"
             "1. Upload or send an image.\n"
-            "2. Use `/analyze_image` by replying to the image.\n"
+            "2. Reply to the image with /analyze_image.\n"
             "I will provide a detailed description of the image, including objects and features I can detect!"
         ),
         'user_data': (
@@ -167,7 +169,8 @@ def get_help_text(category):
         'other': (
             "ℹ️ Other Commands\n\n"
             "• /start - Welcome message and quick actions.\n"
-            "• /help - Display this help message.\n\n"
+            "• /help - Display this help message.\n"
+            "• /queue_status - Check the current status of task queues.\n\n"
             "These commands help you navigate my features!"
         ),
         'admin': (
