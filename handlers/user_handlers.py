@@ -16,6 +16,8 @@ CHOOSING, GUIDED_TOUR = range(2)
 
 # Define help categories
 help_categories = {
+    'chat': "💬 Chatting with the Bot",
+    'session': "🔄 Session Management",
     'conversation': "🗨️ Conversation",
     'ai_models': "🧠 AI Models",
     'tts': "🎙️ Text-to-Speech",
@@ -36,6 +38,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"👋 Welcome, {user.mention_html()}! I'm a multi-functional AI assistant bot.\n\n"
         "🧠 I can engage in conversations, answer questions, and help with various tasks.\n"
         "🎨 I can generate and analyze images, convert text to speech, and even create short video clips!\n\n"
+        "💬 To chat with me, simply type your message and send it. Our conversation will be contextual within a session.\n\n"
+        "🔄 Your session starts now and lasts until you end it or after a period of inactivity. Use /delete_session to end it manually.\n\n"
         "🔧 You can customize my behavior using a system message. "
         f"The current system message is:\n\n\"{context.user_data.get('system_message', DEFAULT_SYSTEM_MESSAGE)}\"\n\n"
         "Use /set_system_message to change it.\n\n"
@@ -43,10 +47,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
 
     keyboard = [
-        [InlineKeyboardButton("🚀 Guided Tour", callback_data="guided_tour")],
-        [InlineKeyboardButton("📚 Help Menu", callback_data="help_menu")],
-        [InlineKeyboardButton("🎨 Generate Image", callback_data="generate_image")],
-        [InlineKeyboardButton("🗣️ Text to Speech", callback_data="text_to_speech")]
+        [InlineKeyboardButton("🚀 Guided Tour", callback_data="guided_tour"),
+         InlineKeyboardButton("📚 Help Menu", callback_data="help_menu")],
+        [InlineKeyboardButton("🎨 Generate Image", callback_data="generate_image"),
+         InlineKeyboardButton("🗣️ Text to Speech", callback_data="text_to_speech")],
+        [InlineKeyboardButton("💬 Chat Info", callback_data="help_chat"),
+         InlineKeyboardButton("🔄 Session Info", callback_data="help_session")]
     ]
 
     if is_admin:
@@ -75,7 +81,8 @@ async def help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     keyboard = []
     for cat, name in help_categories.items():
-        keyboard.append([InlineKeyboardButton(name, callback_data=f"help_{cat}")])
+        if cat != 'admin' or (cat == 'admin' and is_admin):
+            keyboard.append([InlineKeyboardButton(name, callback_data=f"help_{cat}")])
 
     keyboard.append([InlineKeyboardButton("🔙 Back to Start", callback_data="start")])
 
@@ -111,86 +118,108 @@ async def show_help_category(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 def get_help_text(category):
     help_texts = {
+        'chat': (
+            "💬 Chatting with the Bot\n\n"
+            "Chatting with me is easy and interactive:\n"
+            "• Simply type your message and send it.\n"
+            "• Ask questions, seek advice, or chat casually on various topics.\n"
+            "• In group chats, mention me (@bot_username) to get my attention.\n"
+            "• Our conversation is contextual within the current session.\n"
+            "• Use commands during our chat for specific tasks.\n\n"
+            "Start chatting to explore my capabilities!"
+        ),
+        'session': (
+            "🔄 Session Management\n\n"
+            "Understanding sessions enhances our interaction:\n"
+            "• A session starts when you begin chatting and maintains context.\n"
+            "• Sessions are user-specific and private.\n"
+            "• They typically last for a few hours of inactivity.\n"
+            "• Use /delete_session to manually end a session and clear context.\n"
+            "• Starting a new session gives you a fresh start.\n\n"
+            "Effective session management ensures more relevant interactions!"
+        ),
         'conversation': (
-            "🗨️ Conversation\n\n"
-            "• Simply send a message to chat with me.\n"
-            "• /set_system_message - Customize my behavior.\n"
+            "🗨️ Conversation Customization\n\n"
+            "Tailor our interactions to your preferences:\n"
+            "• /set_system_message - Customize my behavior and personality.\n"
             "• /get_system_message - View the current system message.\n\n"
-            "You can set a system message to influence how I respond!"
+            "A custom system message can significantly influence my responses!"
         ),
         'ai_models': (
             "🧠 AI Models\n\n"
+            "Choose the AI model that suits your needs:\n"
             "• /listmodels - View available AI models.\n"
-            "• /setmodel - Change the AI model.\n"
-            "• /currentmodel - Check the current model.\n\n"
-            "Experiment with different models to suit your needs!"
+            "• /setmodel - Change the active AI model.\n"
+            "• /currentmodel - Check the current model in use.\n\n"
+            "Experiment with different models for varied interactions!"
         ),
         'tts': (
             "🎙️ Text-to-Speech\n\n"
-            "• /tts <text> - Convert text to speech.\n"
-            "• /listvoices - View available voices.\n"
-            "• /setvoice - Choose a voice.\n"
-            "• /currentvoice - Check the current voice.\n"
-            "• /generate_sound <description> - Generate a sound based on description.\n\n"
-            "You can make me speak with different voices and generate sounds!"
+            "Convert text to spoken words:\n"
+            "• /tts <text> - Generate speech from text.\n"
+            "• /listvoices - View available voice options.\n"
+            "• /setvoice - Choose a preferred voice.\n"
+            "• /currentvoice - Check the active voice setting.\n"
+            "• /generate_sound <description> - Create custom sound effects.\n\n"
+            "Bring text to life with various voices and sounds!"
         ),
         'image_gen': (
             "🎨 Image Generation\n\n"
-            "• /generate_image <prompt> - Create an image from text using DALL-E 3.\n"
-            "• /flux <prompt> - Generate a realistic image using Fal.ai's Flux model.\n"
-            "• /list_flux_models - View available Flux AI models.\n"
-            "• /set_flux_model - Set the Flux AI model.\n"
-            "• /current_flux_model - Check the current Flux model.\n"
-            "• /leo <prompt> - Generate an image using Leonardo.ai.\n"
-            "• /list_leonardo_models - View available Leonardo.ai models.\n"
-            "• /set_leonardo_model - Set the Leonardo.ai model.\n"
-            "• /current_leonardo_model - Check the current Leonardo.ai model.\n"
-            "• /unzoom - Unzoom a Leonardo.ai generated image.\n\n"
-            "Let your imagination run wild with various image generation options!"
+            "Create visual content with various AI models:\n"
+            "• /generate_image <prompt> - Create images with DALL-E 3.\n"
+            "• /flux <prompt> - Generate realistic images using Flux AI.\n"
+            "• /leo <prompt> - Create images with Leonardo.ai.\n"
+            "• /list_flux_models or /list_leonardo_models - View model options.\n"
+            "• /set_flux_model or /set_leonardo_model - Select a specific model.\n"
+            "• /current_flux_model or /current_leonardo_model - Check active models.\n"
+            "• /unzoom - Expand a Leonardo.ai generated image.\n\n"
+            "Let your imagination run wild with AI-powered image creation!"
         ),
         'video_gen': (
             "🎥 Video Generation\n\n"
-            "• /video <prompt> - Create a short video clip based on a text prompt.\n"
-            "• /img2video - Convert an image into a short video clip.\n\n"
-            "Generate stunning video content from text descriptions or images!"
+            "Create short video clips:\n"
+            "• /video <prompt> - Generate a video from a text description.\n"
+            "• /img2video - Convert a static image into a short video.\n\n"
+            "Bring your ideas to life with AI-generated videos!"
         ),
         'image_analysis': (
             "🔍 Image Analysis\n\n"
-            "• /analyze_image - Analyze an image (reply to an image with this command).\n\n"
-            "💡 How to Use:\n"
-            "1. Upload or send an image.\n"
-            "2. Reply to the image with /analyze_image.\n"
-            "I will provide a detailed description of the image, including objects and features I can detect!"
+            "Get detailed descriptions of images:\n"
+            "• Upload or send an image.\n"
+            "• Reply to the image with /analyze_image.\n"
+            "I'll provide a comprehensive description, including detected objects and features.\n\n"
+            "Gain insights into visual content with AI-powered analysis!"
         ),
         'user_data': (
-            "📊 User Data\n\n"
-            "• /history - View your chat history.\n"
-            "• /delete_session - Clear your current session.\n\n"
-            "Easily manage your interaction data with me."
+            "📊 User Data Management\n\n"
+            "Manage your interaction data:\n"
+            "• /history - View your recent chat history.\n"
+            "• /delete_session - Clear your current session data.\n\n"
+            "Stay in control of your data and interaction history!"
         ),
         'other': (
             "ℹ️ Other Commands\n\n"
-            "• /start - Welcome message and quick actions.\n"
-            "• /help - Display this help message.\n"
-            "• /queue_status - Check the current status of task queues.\n\n"
-            "These commands help you navigate my features!"
+            "Additional useful commands:\n"
+            "• /start - Display the welcome message and main menu.\n"
+            "• /help - Access this help menu.\n"
+            "• /queue_status - Check the current task queue status.\n\n"
+            "These commands help you navigate and utilize all my features efficiently!"
         ),
         'admin': (
             "🛠️ Admin Commands\n\n"
+            "Manage the bot (admin access required):\n"
             "• /admin_broadcast - Send a message to all users.\n"
             "• /admin_user_stats - View user statistics.\n"
-            "• /admin_ban - Ban a user.\n"
-            "• /admin_unban - Unban a user.\n"
-            "• /admin_set_global_system - Set the global system message.\n"
-            "• /admin_logs - View recent logs.\n"
-            "• /admin_restart - Restart the bot.\n"
-            "• /admin_update_models - Update model cache.\n"
+            "• /admin_ban or /admin_unban - Manage user access.\n"
+            "• /admin_set_global_system - Set the default system message.\n"
+            "• /admin_logs - View recent bot logs.\n"
+            "• /admin_restart - Reboot the bot.\n"
+            "• /admin_update_models - Refresh the model cache.\n"
             "• /admin_performance - View performance metrics.\n\n"
-            "Admin-only commands for bot maintenance and management."
+            "Efficiently manage and monitor bot operations!"
         )
     }
-    return help_texts.get(category, "Category not found.")
-
+    return help_texts.get(category, "Category not found. Use /help to see available categories.")
 async def guided_tour(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
