@@ -45,19 +45,34 @@ async def set_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("set_voice")
     logger.info(f"User {update.effective_user.id} initiated voice selection")
     voices = await get_voices()
-    keyboard = [
-        [InlineKeyboardButton(name, callback_data=f"voice_{voice_id}")]
-        for voice_id, name in voices.items()
-    ]
+    
+    # Create a list of voices, sorted alphabetically by name
+    sorted_voices = sorted(voices.items(), key=lambda x: x[1])
+    
+    # Create buttons for each voice, with 2 buttons per row
+    keyboard = []
+    row = []
+    for voice_id, name in sorted_voices:
+        row.append(InlineKeyboardButton(name, callback_data=f"voice_{voice_id}"))
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    if row:  # Add any remaining buttons
+        keyboard.append(row)
+    
+    keyboard.append([InlineKeyboardButton("🔙 Back to Start", callback_data="start")])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
     await update.message.reply_text("Please choose a voice:", reply_markup=reply_markup)
-
+    
 async def current_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("current_voice")
-    current = context.user_data.get('voice_id', get_default_voice())
+    voice_id = context.user_data.get('voice_id', get_default_voice())
     voices = await get_voices()
-    logger.info(f"User {update.effective_user.id} checked current voice: {voices.get(current, 'Unknown')}")
-    await update.message.reply_text(f"Current voice: {voices.get(current, 'Unknown')}")
+    voice_name = voices.get(voice_id, "Unknown")
+    logger.info(f"User {update.effective_user.id} checked current voice: {voice_name} (ID: {voice_id})")
+    await update.message.reply_text(f"Current voice: {voice_name}")
 
 @queue_task('long_run')
 async def tts_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -155,8 +170,9 @@ async def voice_button_callback(update: Update, context: ContextTypes.DEFAULT_TY
         voice_id = query.data.split("_")[1]
         context.user_data['voice_id'] = voice_id
         voices = await get_voices()
-        logger.info(f"User {update.effective_user.id} set voice to {voices.get(voice_id, 'Unknown')}")
-        await query.edit_message_text(f"Voice set to {voices.get(voice_id, 'Unknown')}")
+        voice_name = voices.get(voice_id, "Unknown")
+        logger.info(f"User {update.effective_user.id} set voice to {voice_name} (ID: {voice_id})")
+        await query.edit_message_text(f"Voice set to {voice_name}")
 
 # Ensure these functions are exported
 __all__ = ['list_voices', 'set_voice', 'current_voice', 'tts_command', 'generate_sound', 'voice_button_callback']

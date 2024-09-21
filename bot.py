@@ -86,6 +86,7 @@ def create_application():
     application.add_handler(CallbackQueryHandler(button_callback, pattern="^generate_image$"))
     application.add_handler(CallbackQueryHandler(button_callback, pattern="^text_to_speech$"))
     application.add_handler(CallbackQueryHandler(button_callback, pattern="^admin_panel$"))
+    application.add_handler(CallbackQueryHandler(voice_button_callback, pattern="^voice_"))
 
     # Add callback query handlers
     # Removed CallbackQueryHandler as part of simplified approach
