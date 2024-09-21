@@ -15,16 +15,25 @@ async def list_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     models_text = "Available models:\n" + "\n".join([f"• {name}" for name in models.values()])
     await update.message.reply_text(models_text)
 
+# model_handlers.py
 async def set_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    record_command_usage("set_model")
-    logger.info(f"User {update.effective_user.id} initiated model selection")
-    models = await get_models()
-    keyboard = [
-        [InlineKeyboardButton(name, callback_data=model_id)]
-        for model_id, name in models.items()
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Please choose a model:", reply_markup=reply_markup)
+    user = update.effective_user
+    
+    # Log when this function is called
+    logger.info(f"set_model called by user {user.id}")
+
+    # Check if context.args is empty, and avoid setting the model to "Unknown"
+    if not context.args:
+        logger.warning(f"Model set attempt with no arguments by user {user.id}")
+        await update.message.reply_text("Please provide a valid model name.")
+        return
+
+    # Set the model only if a valid argument is provided
+    model = context.args[0]
+    context.user_data['model'] = model
+
+    logger.info(f"User {user.id} successfully set model to {model}")
+    await update.message.reply_text(f"Model set to: {model}")
 
 async def current_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("current_model")

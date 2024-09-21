@@ -17,7 +17,7 @@ CHOOSING, GUIDED_TOUR = range(2)
 # Define help categories
 help_categories = {
     'conversation': "🗨️ Conversation",
-    'ai_models': "🧠 AI Models",  # Correct key
+    'ai_models': "🧠 AI Models",
     'tts': "🎙️ Text-to-Speech",
     'image_gen': "🎨 Image Generation",
     'video_gen': "🎥 Video Generation",
@@ -39,7 +39,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "🔧 You can customize my behavior using a system message. "
         f"The current system message is:\n\n\"{context.user_data.get('system_message', DEFAULT_SYSTEM_MESSAGE)}\"\n\n"
         "Use /set_system_message to change it.\n\n"
-        "Would you like a guided tour of my features or to see the help menu?"
+        "What would you like to do?"
     )
 
     keyboard = [
@@ -54,8 +54,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_html(welcome_message, reply_markup=reply_markup)
-    logger.info(f"User {user.id} started the bot")
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(welcome_message, reply_markup=reply_markup, parse_mode='HTML')
+    else:
+        await update.message.reply_html(welcome_message, reply_markup=reply_markup)
+    
+    logger.info(f"User {user.id} at start menu")
     return CHOOSING
 
 async def help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -70,7 +75,6 @@ async def help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     keyboard = []
     for cat, name in help_categories.items():
-        # Use the correct category key (e.g., 'ai_models')
         keyboard.append([InlineKeyboardButton(name, callback_data=f"help_{cat}")])
 
     keyboard.append([InlineKeyboardButton("🔙 Back to Start", callback_data="start")])
@@ -89,18 +93,16 @@ async def show_help_category(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
 
-    # Extract the full category key
-    category = query.data.split('_', 1)[1]  # Change here
+    category = query.data.split('_', 1)[1]
 
     logger.info(f"User requested help for category: {category}")
 
-    # Fetch the help text for the category
     help_text = get_help_text(category)
 
     keyboard = [[InlineKeyboardButton("🔙 Back to Help Menu", callback_data="help_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if help_text != "Category not found.":  # Change here
+    if help_text != "Category not found.":
         await query.edit_message_text(help_text, reply_markup=reply_markup)
     else:
         await query.edit_message_text(f"Category '{category}' not found.", reply_markup=reply_markup)
@@ -189,8 +191,6 @@ def get_help_text(category):
     }
     return help_texts.get(category, "Category not found.")
 
-
-
 async def guided_tour(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
@@ -244,12 +244,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return await guided_tour(update, context)
     elif query.data.startswith("tour_"):
         return await guided_tour(update, context)
-    elif query.data == "start":
-        return await start(update, context)
     elif query.data == "generate_image":
-        await query.edit_message_text("To generate an image, use the command:\n/generate_image <your image description>")
+        help_text = get_help_text('image_gen')
+        await query.edit_message_text(help_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="start")]]))
+        return CHOOSING
     elif query.data == "text_to_speech":
-        await query.edit_message_text("To convert text to speech, use the command:\n/tts <your text>")
+        help_text = get_help_text('tts')
+        await query.edit_message_text(help_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="start")]]))
+        return CHOOSING
     elif query.data == "admin_panel":
         if update.effective_user.id in ADMIN_USER_IDS:
             admin_panel_text = (
@@ -265,13 +267,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "• /admin_update_models - Update the model cache\n"
                 "• /admin_performance - View performance metrics"
             )
-            await query.edit_message_text(admin_panel_text)
+            await query.edit_message_text(admin_panel_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="start")]]))
         else:
-            await query.edit_message_text("You don't have permission to access the admin panel.")
+            await query.edit_message_text("You don't have permission to access the admin panel.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="start")]]))
+        return CHOOSING
+    elif query.data == "start":
+        return await start(update, context)
     else:
-        await query.edit_message_text("I'm not sure how to handle that request. Please try using a command from the /help list.")
-
-    return CHOOSING
+        await query.edit_message_text("I'm not sure how to handle that request. Please try using a command from the /help list.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="start")]]))
+        return CHOOSING
 
 async def delete_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("delete_session")
@@ -368,7 +372,7 @@ conv_handler = ConversationHandler(
     ],
     states={
         CHOOSING: [
-            CallbackQueryHandler(button_callback, pattern="^help_|^guided_tour|^start$"),
+            CallbackQueryHandler(button_callback),
         ],
         GUIDED_TOUR: [
             CallbackQueryHandler(guided_tour, pattern="^tour_"),
@@ -379,4 +383,3 @@ conv_handler = ConversationHandler(
         CommandHandler("help", help_menu),
     ]
 )
-

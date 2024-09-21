@@ -16,7 +16,7 @@ from handlers import (
     handle_message, error_handler, delete_session_command, img2video_command,
     list_leonardo_models, set_leonardo_model, current_leonardo_model,
     leonardo_generate_image, update_leonardo_model_cache, leonardo_model_callback, leonardo_unzoom,
-    get_history, set_system_message, get_system_message
+    get_history, set_system_message, get_system_message, button_callback
 )
 from utils import periodic_cache_update, periodic_voice_cache_update
 from database import init_db
@@ -83,6 +83,9 @@ def create_application():
     application.add_handler(CommandHandler("admin_restart", admin_restart_bot))
     application.add_handler(CommandHandler("admin_update_models", admin_update_model_cache))
     application.add_handler(CommandHandler("admin_performance", admin_performance))
+    application.add_handler(CallbackQueryHandler(button_callback, pattern="^generate_image$"))
+    application.add_handler(CallbackQueryHandler(button_callback, pattern="^text_to_speech$"))
+    application.add_handler(CallbackQueryHandler(button_callback, pattern="^admin_panel$"))
 
     # Add callback query handlers
     # Removed CallbackQueryHandler as part of simplified approach
