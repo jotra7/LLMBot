@@ -1,7 +1,10 @@
 import logging
 import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ConversationHandler, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import (
+    ConversationHandler, CommandHandler, CallbackQueryHandler, ContextTypes, 
+    MessageHandler, filters
+)
 from config import DEFAULT_MODEL, DEFAULT_SYSTEM_MESSAGE, ADMIN_USER_IDS
 from model_cache import get_models
 from voice_cache import get_voices, get_default_voice
@@ -12,7 +15,7 @@ from queue_system import queue_task
 from storage import delete_user_session
 
 logger = logging.getLogger(__name__)
-CHOOSING, GUIDED_TOUR = range(2)
+CHOOSING, GUIDED_TOUR, BUG_REPORT, BUG_SCREENSHOT = range(4)
 
 # Define help categories
 help_categories = {
@@ -204,7 +207,8 @@ def get_help_text(category):
             "Additional useful commands:\n"
             "• /start - Display the welcome message and main menu.\n"
             "• /help - Access this help menu.\n"
-            "• /queue_status - Check the current task queue status.\n\n"
+            "• /queue_status - Check the current task queue status.\n"
+            "• /bug - Report a bug or issue with the bot.\n\n"
             "These commands help you navigate and utilize all my features efficiently!"
         ),
         'admin': (
@@ -263,7 +267,6 @@ async def guided_tour(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([buttons]))
     return GUIDED_TOUR if step < len(tour_steps) - 1 else CHOOSING
-
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
@@ -355,6 +358,10 @@ async def get_system_message(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 @queue_task('quick')
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Check if we're in the middle of a bug report
+    if context.user_data.get('expecting_bug_report'):
+        return await receive_bug_report(update, context)
+    
     user_message = update.message.text
     user_id = update.effective_user.id
     model = context.user_data.get('model', DEFAULT_MODEL)
@@ -397,10 +404,70 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(f"An error occurred: {e}")
         record_error("message_processing_error")
 
+async def bug_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Please describe the bug you've encountered. If you want to include a screenshot, you can send it after your description.")
+    context.user_data['expecting_bug_report'] = True
+    return BUG_REPORT
+
+async def receive_bug_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['bug_report'] = update.message.text
+    context.user_data['expecting_bug_report'] = False
+    await update.message.reply_text("Thank you for your report. You can now send a screenshot if you have one, or use /skip if you don't.")
+    return BUG_SCREENSHOT
+
+async def receive_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message.document:
+        file = await update.message.document.get_file()
+    elif update.message.photo:
+        file = await update.message.photo[-1].get_file()
+    else:
+        await update.message.reply_text("Please send an image file or use /skip if you don't have a screenshot.")
+        return BUG_SCREENSHOT
+
+    context.user_data['screenshot'] = file
+    return await send_bug_report(update, context)
+
+async def skip_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    return await send_bug_report(update, context)
+
+async def send_bug_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = update.effective_user
+    bug_report = context.user_data['bug_report']
+    screenshot = context.user_data.get('screenshot')
+
+    report_message = f"Bug Report from {user.mention_html()}:\n\n{bug_report}"
+
+    for admin_id in ADMIN_USER_IDS:
+        try:
+            if screenshot:
+                await context.bot.send_photo(
+                    chat_id=admin_id,
+                    photo=screenshot.file_id,
+                    caption=report_message,
+                    parse_mode='HTML'
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=report_message,
+                    parse_mode='HTML'
+                )
+        except Exception as e:
+            logger.error(f"Failed to send bug report to admin {admin_id}: {str(e)}")
+
+    await update.message.reply_text("Thank you for your bug report. It has been sent to the administrators.")
+    return ConversationHandler.END
+
+async def cancel_bug_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['expecting_bug_report'] = False
+    await update.message.reply_text("Bug report cancelled.")
+    return ConversationHandler.END
+
 conv_handler = ConversationHandler(
     entry_points=[
         CommandHandler("start", start),
         CommandHandler("help", help_menu),
+        CommandHandler("bug", bug_command),
     ],
     states={
         CHOOSING: [
@@ -409,10 +476,38 @@ conv_handler = ConversationHandler(
         GUIDED_TOUR: [
             CallbackQueryHandler(guided_tour, pattern="^tour_"),
         ],
+        BUG_REPORT: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, receive_bug_report),
+        ],
+        BUG_SCREENSHOT: [
+            MessageHandler(filters.PHOTO | filters.Document.IMAGE, receive_screenshot),
+            CommandHandler("skip", skip_screenshot),
+        ],
     },
     fallbacks=[
         CommandHandler("start", start),
         CommandHandler("help", help_menu),
+        CommandHandler("cancel", cancel_bug_report),
     ]
 )
 
+__all__ = [
+    'start',
+    'help_menu',
+    'show_help_category',
+    'get_help_text',
+    'guided_tour',
+    'button_callback',
+    'delete_session_command',
+    'get_history',
+    'set_system_message',
+    'get_system_message',
+    'handle_message',
+    'bug_command',
+    'receive_bug_report',
+    'receive_screenshot',
+    'skip_screenshot',
+    'send_bug_report',
+    'cancel_bug_report',
+    'conv_handler',
+]
