@@ -97,7 +97,7 @@ async def initialize_bot():
     # Schedule periodic tasks
     application.job_queue.run_repeating(periodic_cache_update, interval=timedelta(days=1), first=10)
     application.job_queue.run_repeating(periodic_voice_cache_update, interval=timedelta(days=1), first=10)
-    application.job_queue.run_repeating(save_performance_data(), interval=timedelta(hours=1), first=10)
+    application.job_queue.run_repeating(save_performance_data, interval=timedelta(hours=1), first=10)
     application.job_queue.run_once(leonardo_handlers.update_leonardo_model_cache, when=0)
     application.job_queue.run_repeating(leonardo_handlers.update_leonardo_model_cache, interval=timedelta(days=1), first=timedelta(days=1))
     

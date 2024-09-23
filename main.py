@@ -9,7 +9,6 @@ from performance_metrics import init_performance_db
 from queue_system import start_task_queue
 from config import ADMIN_USER_IDS
 
-# Set up logging
 def setup_logging():
     log_dir = "./logs"
     os.makedirs(log_dir, exist_ok=True)
@@ -17,32 +16,31 @@ def setup_logging():
     # Main log file
     main_log_file = os.path.join(log_dir, "bot.log")
     main_handler = RotatingFileHandler(main_log_file, maxBytes=10*1024*1024, backupCount=5)
-    main_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-
-    # Debug log file
-    debug_log_file = os.path.join(log_dir, "bot_debug.log")
-    debug_handler = RotatingFileHandler(debug_log_file, maxBytes=10*1024*1024, backupCount=5)
-    debug_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    main_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    main_handler.setFormatter(main_formatter)
+    main_handler.setLevel(logging.INFO)
 
     # Configure root logger
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)
+    root_logger.setLevel(logging.DEBUG)  # Set to DEBUG to allow fine-grained control
     root_logger.addHandler(main_handler)
-    root_logger.addHandler(debug_handler)
 
     # Set levels for specific loggers
     logging.getLogger('httpx').setLevel(logging.WARNING)
+    logging.getLogger('httpcore').setLevel(logging.WARNING)
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
     logging.getLogger('telegram').setLevel(logging.INFO)
+    logging.getLogger('apscheduler').setLevel(logging.INFO)
 
-    # Create a logger named 'debug' for compatibility with existing code
-    global debug_logger
-    debug_logger = logging.getLogger('debug')
-    debug_logger.setLevel(logging.DEBUG)
+    # Ensure your application's logger is set to INFO
+    logging.getLogger('__main__').setLevel(logging.INFO)
+    logging.getLogger('bot').setLevel(logging.INFO)
+    logging.getLogger('handlers').setLevel(logging.INFO)
 
 setup_logging()
 
-# Now you can use both `logging.getLogger(__name__)` and `debug_logger`
 logger = logging.getLogger(__name__)
+logging.getLogger('apscheduler').setLevel(logging.INFO)
 
 async def main():
     logger.info("Starting main function")

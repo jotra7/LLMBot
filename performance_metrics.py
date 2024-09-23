@@ -3,6 +3,7 @@ from collections import defaultdict
 import sqlite3
 import statistics
 import logging
+from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ def record_error(error_type):
     performance_data['errors'][error_type] += 1
     logger.debug(f"Recorded error: {error_type}")
 
-async def save_performance_data():
+async def save_performance_data(context: ContextTypes.DEFAULT_TYPE = None):
     conn = sqlite3.connect('performance_metrics.db')
     cursor = conn.cursor()
 
