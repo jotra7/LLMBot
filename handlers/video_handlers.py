@@ -24,41 +24,43 @@ async def generate_text_to_video(update: Update, context: ContextTypes.DEFAULT_T
     progress_message = await update.message.reply_text("🎬 Generating video... This may take 20-30 seconds or more.")
 
     try:
+        # Log the arguments being passed to the API for debugging
+        arguments = {
+            "prompt": prompt,
+            "num_frames": 32,
+            "num_inference_steps": 25,
+            "guidance_scale": 7.5,
+            "fps": 8,
+            "video_size": "square"
+        }
+        logger.info(f"Requesting video generation with arguments: {arguments}")
+
         handler = fal_client.submit(
             "fal-ai/fast-animatediff/text-to-video",
-            arguments={
-                "prompt": prompt,
-                "num_frames": 150,
-                "num_inference_steps": 25,
-                "guidance_scale": 7.5,
-                "fps": 30,
-                "video_size": "square"
-            }
+            arguments=arguments
         )
 
         result = handler.get()
         video_url = result['video']['url']
         
         await progress_message.edit_text("✅ Video generated! Uploading...")
-        
+
         video_content = requests.get(video_url).content
-        
         await update.message.reply_video(video_content, caption=f"Generated video for: {prompt}")
-        
+
         await progress_message.delete()
 
         logger.info(f"Video generated successfully for user {user_id}")
 
-    except Exception as e:
-        logger.error(f"Video generation error for user {user_id}: {str(e)}")
-        try:
-            await progress_message.edit_text(f"❌ An error occurred while generating the video: {str(e)}")
-        except Exception as edit_error:
-            logger.error(f"Error updating progress message: {str(edit_error)}")
-        record_error("video_generation_error")
+    except fal_client.FalClientError as e:
+        # Detailed logging of the error response and request arguments
+        logger.error(f"Fal client error: {e} - Response content: {getattr(e, 'response', None)}")
+        await progress_message.edit_text(f"⚠️ Failed to generate video: {e}")
     
-    finally:
-        logger.info(f"Video generation process completed for user {user_id}")
+    except Exception as e:
+        # General exception logging with more details
+        logger.error(f"Unexpected error during video generation: {e}")
+        await progress_message.edit_text("⚠️ An unexpected error occurred. Please try again later.")
 
 @queue_task('long_run')
 async def img2video_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
