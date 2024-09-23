@@ -1,7 +1,9 @@
 import requests
 from datetime import datetime, timedelta
 from config import ELEVENLABS_API_KEY
+import logging
 
+logger = logging.getLogger(__name__)
 voice_cache = {}
 last_cache_update = None
 
@@ -19,8 +21,9 @@ async def update_voice_cache():
         
         voice_cache = {voice["voice_id"]: voice["name"] for voice in voices}
         last_cache_update = datetime.now()
+        logger.info("Voice cache updated successfully")
     except Exception as e:
-        print(f"Error updating voice cache: {str(e)}")
+        logger.exception(f"Error updating voice cache: {str(e)}")
 
 async def get_voices():
     global last_cache_update
@@ -32,5 +35,4 @@ async def periodic_voice_cache_update(context):
     await update_voice_cache()
 
 def get_default_voice():
-    # You can change this logic to select a different default voice if needed
     return next(iter(voice_cache.items()))[0] if voice_cache else None

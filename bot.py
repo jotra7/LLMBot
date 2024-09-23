@@ -1,141 +1,116 @@
-import logging
-import asyncio
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
-from config import TELEGRAM_BOT_TOKEN
+from config import TELEGRAM_BOT_TOKEN, ADMIN_USER_IDS
 from handlers import (
-    conv_handler,
-    help_menu,
-    list_models, set_model, current_model,
-    tts_command, list_voices, set_voice, current_voice, voice_button_callback,
-    generate_image, analyze_image,
-    generate_text_to_video,
-    admin_broadcast, admin_user_stats, admin_ban_user, admin_unban_user,
-    admin_set_global_system_message, admin_view_logs, admin_restart_bot,
-    admin_update_model_cache, admin_performance, notify_admins, on_startup,
-    list_flux_models, set_flux_model, current_flux_model, flux_model_callback, flux_command,
-    handle_message, error_handler, delete_session_command, img2video_command,
-    list_leonardo_models, set_leonardo_model, current_leonardo_model,
-    leonardo_generate_image, update_leonardo_model_cache, leonardo_model_callback, leonardo_unzoom,
-    get_history, set_system_message, get_system_message, button_callback
+    user_handlers,
+    model_handlers,
+    voice_handlers,
+    image_handlers,
+    video_handlers,
+    admin_handlers,
+    flux_handlers,
+    message_handlers,
+    leonardo_handlers
 )
-from utils import periodic_cache_update, periodic_voice_cache_update
-from database import init_db
-from performance_metrics import init_performance_db, save_performance_data
+from model_cache import periodic_cache_update
+from voice_cache import periodic_voice_cache_update
+from performance_metrics import save_performance_data
 from datetime import timedelta
-import model_cache
-from storage import delete_user_session
-from queue_system import start_task_queue, task_queue, check_queue_status
-
-# Set up logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO,
-    filename='bot.log'
-)
-logger = logging.getLogger(__name__)
-
-httpx_logger = logging.getLogger("httpx")
-httpx_logger.setLevel(logging.WARNING)
 
 def create_application():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Add the conversation handler for start and other interactive features
-    application.add_handler(conv_handler)
+    # Add handlers from user_handlers
+    application.add_handler(user_handlers.conv_handler)
+    application.add_handler(CommandHandler("help", user_handlers.help_menu))
+    application.add_handler(CommandHandler("history", user_handlers.get_history))
+    application.add_handler(CommandHandler("set_system_message", user_handlers.set_system_message))
+    application.add_handler(CommandHandler("get_system_message", user_handlers.get_system_message))
+    application.add_handler(CommandHandler("delete_session", user_handlers.delete_session_command))
 
-    # Add a separate handler for the help command
-    application.add_handler(CommandHandler("help", help_menu))  # Reintroduced to handle /help command  # Commented out to avoid conflict with CallbackQueryHandler
+    # Add handlers from model_handlers
+    application.add_handler(CommandHandler("listmodels", model_handlers.list_models))
+    application.add_handler(CommandHandler("setmodel", model_handlers.set_model))
+    application.add_handler(CommandHandler("currentmodel", model_handlers.current_model))
 
-    # Add other command handlers
-    application.add_handler(CommandHandler("listmodels", list_models))
-    application.add_handler(CommandHandler("setmodel", set_model))
-    application.add_handler(CommandHandler("currentmodel", current_model))
-    application.add_handler(CommandHandler("tts", tts_command))
-    application.add_handler(CommandHandler("listvoices", list_voices))
-    application.add_handler(CommandHandler("setvoice", set_voice))
-    application.add_handler(CommandHandler("currentvoice", current_voice))
-    application.add_handler(CommandHandler("history", get_history))
-    application.add_handler(CommandHandler("generate_image", generate_image))
-    application.add_handler(CommandHandler("analyze_image", analyze_image))
-    application.add_handler(CommandHandler("set_system_message", set_system_message))
-    application.add_handler(CommandHandler("get_system_message", get_system_message))
-    application.add_handler(CommandHandler("flux", flux_command))
-    application.add_handler(CommandHandler("list_flux_models", list_flux_models))
-    application.add_handler(CommandHandler("set_flux_model", set_flux_model))
-    application.add_handler(CommandHandler("current_flux_model", current_flux_model))
-    application.add_handler(CommandHandler("queue_status", check_queue_status))
-    application.add_handler(CommandHandler("video", generate_text_to_video))
-    application.add_handler(CommandHandler("img2video", img2video_command))
-    application.add_handler(CommandHandler("delete_session", delete_session_command))
-    application.add_handler(CommandHandler("list_leonardo_models", list_leonardo_models))
-    application.add_handler(CommandHandler("set_leonardo_model", set_leonardo_model))
-    application.add_handler(CommandHandler("current_leonardo_model", current_leonardo_model))
-    application.add_handler(CommandHandler("leo", leonardo_generate_image))
-    application.add_handler(CommandHandler("unzoom", leonardo_unzoom))
+    # Add handlers from voice_handlers
+    application.add_handler(CommandHandler("tts", voice_handlers.tts_command))
+    application.add_handler(CommandHandler("listvoices", voice_handlers.list_voices))
+    application.add_handler(CommandHandler("setvoice", voice_handlers.set_voice))
+    application.add_handler(CommandHandler("currentvoice", voice_handlers.current_voice))
+    application.add_handler(voice_handlers.voice_addition_handler)
+    application.add_handler(CommandHandler("delete_custom_voice", voice_handlers.delete_custom_voice))
 
-    # Admin command handlers
-    application.add_handler(CommandHandler("admin_broadcast", admin_broadcast))
-    application.add_handler(CommandHandler("admin_user_stats", admin_user_stats))
-    application.add_handler(CommandHandler("admin_ban", admin_ban_user))
-    application.add_handler(CommandHandler("admin_unban", admin_unban_user))
-    application.add_handler(CommandHandler("admin_set_global_system", admin_set_global_system_message))
-    application.add_handler(CommandHandler("admin_logs", admin_view_logs))
-    application.add_handler(CommandHandler("admin_restart", admin_restart_bot))
-    application.add_handler(CommandHandler("admin_update_models", admin_update_model_cache))
-    application.add_handler(CommandHandler("admin_performance", admin_performance))
-    application.add_handler(CallbackQueryHandler(button_callback, pattern="^generate_image$"))
-    application.add_handler(CallbackQueryHandler(button_callback, pattern="^text_to_speech$"))
-    application.add_handler(CallbackQueryHandler(button_callback, pattern="^admin_panel$"))
-    application.add_handler(CallbackQueryHandler(voice_button_callback, pattern="^voice_"))
 
-    # Add callback query handlers
-    # Removed CallbackQueryHandler as part of simplified approach
-    application.add_handler(CallbackQueryHandler(voice_button_callback, pattern=r"^voice_"))
-    # Removed CallbackQueryHandler as part of simplified approach
-    application.add_handler(CallbackQueryHandler(flux_model_callback, pattern=r"^set_flux_model:"))
-    # Removed CallbackQueryHandler as part of simplified approach
-    application.add_handler(CallbackQueryHandler(leonardo_model_callback, pattern="^leo_model:"))
+    # Add handlers from image_handlers
+    application.add_handler(CommandHandler("generate_image", image_handlers.generate_image))
+    application.add_handler(CommandHandler("analyze_image", image_handlers.analyze_image))
+
+    # Add handlers from video_handlers
+    application.add_handler(CommandHandler("video", video_handlers.generate_text_to_video))
+    application.add_handler(CommandHandler("img2video", video_handlers.img2video_command))
+
+    # Add handlers from admin_handlers
+    application.add_handler(CommandHandler("admin_broadcast", admin_handlers.admin_broadcast))
+    application.add_handler(CommandHandler("admin_user_stats", admin_handlers.admin_user_stats))
+    application.add_handler(CommandHandler("admin_ban", admin_handlers.admin_ban_user))
+    application.add_handler(CommandHandler("admin_unban", admin_handlers.admin_unban_user))
+    application.add_handler(CommandHandler("admin_set_global_system", admin_handlers.admin_set_global_system_message))
+    application.add_handler(CommandHandler("admin_logs", admin_handlers.admin_view_logs))
+    application.add_handler(CommandHandler("admin_restart", admin_handlers.admin_restart_bot))
+    application.add_handler(CommandHandler("admin_update_models", admin_handlers.admin_update_model_cache))
+    application.add_handler(CommandHandler("admin_performance", admin_handlers.admin_performance))
+
+    # Add handlers from flux_handlers
+    application.add_handler(CommandHandler("list_flux_models", flux_handlers.list_flux_models))
+    application.add_handler(CommandHandler("set_flux_model", flux_handlers.set_flux_model))
+    application.add_handler(CommandHandler("current_flux_model", flux_handlers.current_flux_model))
+    application.add_handler(CommandHandler("flux", flux_handlers.flux_command))
+
+    # Add handlers from leonardo_handlers
+    application.add_handler(CommandHandler("list_leonardo_models", leonardo_handlers.list_leonardo_models))
+    application.add_handler(CommandHandler("set_leonardo_model", leonardo_handlers.set_leonardo_model))
+    application.add_handler(CommandHandler("current_leonardo_model", leonardo_handlers.current_leonardo_model))
+    application.add_handler(CommandHandler("leo", leonardo_handlers.leonardo_generate_image))
+    application.add_handler(CommandHandler("unzoom", leonardo_handlers.leonardo_unzoom))
 
     # Add message handler
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & (filters.ChatType.PRIVATE | filters.Entity("mention")),
-        handle_message
+        message_handlers.handle_message
     ))
 
     # Set up error handler
-    application.add_error_handler(error_handler)
+    application.add_error_handler(message_handlers.error_handler)
 
-    # Schedule periodic tasks
-    application.job_queue.run_repeating(periodic_cache_update, interval=timedelta(days=1), first=10)
-    application.job_queue.run_repeating(periodic_voice_cache_update, interval=timedelta(days=1), first=10)
-    application.job_queue.run_once(lambda context: asyncio.create_task(update_leonardo_model_cache(context)), when=0)
-    application.job_queue.run_repeating(lambda context: asyncio.create_task(update_leonardo_model_cache(context)), interval=timedelta(days=1), first=timedelta(days=1))   
-    
-    async def save_performance_data_job(context):
-        await save_performance_data()
-
-    application.job_queue.run_repeating(save_performance_data_job, interval=timedelta(hours=1), first=10)
-    application.job_queue.run_once(on_startup, when=0)
+    # Add callback query handlers
+    application.add_handler(CallbackQueryHandler(model_handlers.button_callback))
+    application.add_handler(CallbackQueryHandler(voice_handlers.voice_button_callback, pattern=r"^voice_"))
+    application.add_handler(CallbackQueryHandler(flux_handlers.flux_model_callback, pattern=r"^set_flux_model:"))
+    application.add_handler(CallbackQueryHandler(leonardo_handlers.leonardo_model_callback, pattern="^leo_model:"))
 
     return application
 
 async def initialize_bot():
-    # Initialize the database
-    init_db()
-    init_performance_db()
-
-    # Start the task queue and await the worker tasks
-    worker_tasks = await start_task_queue()  # Await here since it's an async function
-
-    # Create the application
+    """Initialize and return the bot application."""
     application = create_application()
-
-    # Add the worker tasks to the application so they don't get garbage collected
-    application.worker_tasks = worker_tasks
-
-    # Schedule the admin notification
-    application.job_queue.run_once(notify_admins, when=1)
-
+    
+    # Schedule periodic tasks
+    application.job_queue.run_repeating(periodic_cache_update, interval=timedelta(days=1), first=10)
+    application.job_queue.run_repeating(periodic_voice_cache_update, interval=timedelta(days=1), first=10)
+    application.job_queue.run_repeating(save_performance_data(), interval=timedelta(hours=1), first=10)
+    application.job_queue.run_once(leonardo_handlers.update_leonardo_model_cache, when=0)
+    application.job_queue.run_repeating(leonardo_handlers.update_leonardo_model_cache, interval=timedelta(days=1), first=timedelta(days=1))
+    
+    # Initialize the application
+    await application.initialize()
+    
+    # Notify admins that the bot has started
+    for admin_id in ADMIN_USER_IDS:
+        try:
+            await application.bot.send_message(chat_id=admin_id, text='🚀 Bot has been started successfully!')
+        except Exception as e:
+            print(f"Failed to send startup notification to admin {admin_id}: {str(e)}")
+    
     return application
 
-
+# Keep any other existing functions in bot.py if needed

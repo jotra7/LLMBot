@@ -160,7 +160,9 @@ def get_help_text(category):
             "• /listvoices - View available voice options.\n"
             "• /setvoice - Choose a preferred voice.\n"
             "• /currentvoice - Check the active voice setting.\n"
-            "• /generate_sound <description> - Create custom sound effects.\n\n"
+            "• /generate_sound <description> - Create custom sound effects.\n"
+            "• /add_voice - Add a custom voice (one per user).\n"
+            "• /delete_custom_voice - Delete your custom voice.\n\n"
             "Bring text to life with various voices and sounds!"
         ),
         'image_gen': (
@@ -220,6 +222,7 @@ def get_help_text(category):
         )
     }
     return help_texts.get(category, "Category not found. Use /help to see available categories.")
+
 async def guided_tour(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
@@ -412,3 +415,4 @@ conv_handler = ConversationHandler(
         CommandHandler("help", help_menu),
     ]
 )
+

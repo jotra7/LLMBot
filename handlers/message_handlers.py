@@ -4,16 +4,14 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from config import DEFAULT_MODEL, DEFAULT_SYSTEM_MESSAGE, ADMIN_USER_IDS
 from utils import anthropic_client
-from database import save_conversation
+from storage import save_conversation, get_user_session, update_user_session
 from performance_metrics import record_response_time, record_model_usage, record_error, record_command_usage
 from queue_system import queue_task
-from storage import get_user_session, update_user_session
 
 logger = logging.getLogger(__name__)
 
 @queue_task('quick')
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    record_command_usage("claude_message")
     user_message = update.message.text
     user_id = update.effective_user.id
     model = context.user_data.get('model', DEFAULT_MODEL)

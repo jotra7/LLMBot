@@ -9,122 +9,143 @@ from performance_metrics import init_performance_db
 from queue_system import start_task_queue
 from config import ADMIN_USER_IDS
 
-# Set up logging to a separate debug file
-log_dir = "./logs"
-os.makedirs(log_dir, exist_ok=True)
+# Set up logging
+def setup_logging():
+    log_dir = "./logs"
+    os.makedirs(log_dir, exist_ok=True)
 
-debug_log_file = os.path.join(log_dir, "bot_debug.log")
-debug_handler = RotatingFileHandler(debug_log_file, maxBytes=10*1024*1024, backupCount=5)
-debug_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    # Main log file
+    main_log_file = os.path.join(log_dir, "bot.log")
+    main_handler = RotatingFileHandler(main_log_file, maxBytes=10*1024*1024, backupCount=5)
+    main_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 
-# Create a new logger for debugging
-debug_logger = logging.getLogger('debug')
-debug_logger.setLevel(logging.DEBUG)
-debug_logger.addHandler(debug_handler)
+    # Debug log file
+    debug_log_file = os.path.join(log_dir, "bot_debug.log")
+    debug_handler = RotatingFileHandler(debug_log_file, maxBytes=10*1024*1024, backupCount=5)
+    debug_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+    root_logger.addHandler(main_handler)
+    root_logger.addHandler(debug_handler)
+
+    # Set levels for specific loggers
+    logging.getLogger('httpx').setLevel(logging.WARNING)
+    logging.getLogger('telegram').setLevel(logging.INFO)
+
+    # Create a logger named 'debug' for compatibility with existing code
+    global debug_logger
+    debug_logger = logging.getLogger('debug')
+    debug_logger.setLevel(logging.DEBUG)
+
+setup_logging()
+
+# Now you can use both `logging.getLogger(__name__)` and `debug_logger`
+logger = logging.getLogger(__name__)
 
 async def main():
-    debug_logger.info("Starting main function")
+    logger.info("Starting main function")
     try:
-        debug_logger.info("Entering try block")
+        logger.info("Entering try block")
 
         # Initialize the database
-        debug_logger.info("Initializing database")
+        logger.info("Initializing database")
         init_db()
-        debug_logger.info("Database initialized successfully")
+        logger.info("Database initialized successfully")
 
         # Initialize performance metrics database
-        debug_logger.info("Initializing performance metrics database")
+        logger.info("Initializing performance metrics database")
         init_performance_db()
-        debug_logger.info("Performance metrics database initialized successfully")
+        logger.info("Performance metrics database initialized successfully")
 
         # Ensure the model cache is populated before starting the bot
-        debug_logger.info("About to update model cache")
+        logger.info("About to update model cache")
         try:
             await update_model_cache()
         except Exception as e:
-            debug_logger.error(f'Error updating model cache: {str(e)}')
+            logger.error(f'Error updating model cache: {str(e)}')
             raise
-        debug_logger.info("Model cache updated successfully")
+        logger.info("Model cache updated successfully")
 
         # Start the task queue
-        debug_logger.info("Starting task queue")
+        logger.info("Starting task queue")
         try:
             worker_tasks = await start_task_queue()  # Await this coroutine
-            debug_logger.info("Task queue started successfully")
+            logger.info("Task queue started successfully")
         except Exception as e:
-            debug_logger.error(f"Failed to start task queue: {e}")
+            logger.error(f"Failed to start task queue: {e}")
             raise
 
         # Create the application
-        debug_logger.info("About to create application")
+        logger.info("About to create application")
         application = await initialize_bot()  # Await the initialize_bot function
-        debug_logger.info("Application created successfully")
+        logger.info("Application created successfully")
 
         # Add the worker tasks to the application
         application.worker_tasks = worker_tasks
 
         # Initialize the application
-        debug_logger.info("About to initialize application")
+        logger.info("About to initialize application")
         await application.initialize()
-        debug_logger.info("Application initialized successfully")
+        logger.info("Application initialized successfully")
 
-        debug_logger.info("About to start application")
+        logger.info("About to start application")
         try:
             await application.start()
         except Exception as e:
-            debug_logger.error(f'Error starting application: {str(e)}')
+            logger.error(f'Error starting application: {str(e)}')
             raise
-        debug_logger.info("Application started successfully")
+        logger.info("Application started successfully")
 
-        debug_logger.info("About to start polling")
+        logger.info("About to start polling")
         await application.updater.start_polling()
-        debug_logger.info("Polling started successfully")
+        logger.info("Polling started successfully")
 
         # Notify admins that the bot has been restarted
-        debug_logger.info("Bot restarted or rebooted successfully. Notifying admins.")
+        logger.info("Bot restarted or rebooted successfully. Notifying admins.")
         for admin_id in ADMIN_USER_IDS:
             try:
                 await application.bot.send_message(chat_id=admin_id, text='🚀 Bot has been rebooted or restarted successfully!')
-                debug_logger.info(f'Sent restart notification to admin {admin_id}')
+                logger.info(f'Sent restart notification to admin {admin_id}')
             except Exception as e:
-                debug_logger.error(f'Failed to send restart notification to admin {admin_id}: {str(e)}')
+                logger.error(f'Failed to send restart notification to admin {admin_id}: {str(e)}')
 
-        debug_logger.info("Bot is running. Entering main loop.")
+        logger.info("Bot is running. Entering main loop.")
 
         # Keep the bot running
         while True:
-#            debug_logger.debug("Main loop iteration")
             await asyncio.sleep(10)  # Log every 10 seconds to reduce log size
     except Exception as e:
-        debug_logger.exception(f"An error occurred in main: {str(e)}")
+        logger.exception(f"An error occurred in main: {str(e)}")
     finally:
-        debug_logger.info("Entering finally block")
-        debug_logger.info("Stopping bot")
+        logger.info("Entering finally block")
+        logger.info("Stopping bot")
         if 'application' in locals() and hasattr(application, 'stop'):
             try:
                 await application.stop()
             except Exception as e:
-                debug_logger.error(f'Error during application stop: {str(e)}')
+                logger.error(f'Error during application stop: {str(e)}')
                 raise
-            debug_logger.info("Application stop completed")
+            logger.info("Application stop completed")
         if 'application' in locals() and hasattr(application, 'shutdown'):
             try:
                 await application.shutdown()
-                debug_logger.info("Application shutdown completed")
+                logger.info("Application shutdown completed")
             except Exception as e:
-                debug_logger.exception(f"Error during application shutdown: {str(e)}")
+                logger.exception(f"Error during application shutdown: {str(e)}")
         
         # Cancel worker tasks
         if 'worker_tasks' in locals():
-            debug_logger.info("Cancelling worker tasks")
+            logger.info("Cancelling worker tasks")
             for task in worker_tasks.values():
                 task.cancel()
             await asyncio.gather(*worker_tasks.values(), return_exceptions=True)
-            debug_logger.info("Worker tasks cancelled")
+            logger.info("Worker tasks cancelled")
 
-        debug_logger.info("Bot stopped")
+        logger.info("Bot stopped")
 
 if __name__ == "__main__":
-    debug_logger.info("Script started")
+    logger.info("Script started")
     asyncio.run(main())
-    debug_logger.info("Script ended")
+    logger.info("Script ended")
