@@ -13,6 +13,7 @@ This project implements a feature-rich Telegram bot powered by Anthropic's langu
 - Video generation using Fal.ai's fast-animatediff model
 - Dynamic model selection for Anthropic models
 - Voice selection for text-to-speech responses
+- Custom voice upload
 - Conversation history tracking
 - Automatic caching and updating of available models and voices
 - Performance tracking and metrics
@@ -80,6 +81,8 @@ Once the bot is running, you can interact with it on Telegram using the followin
 - `/listvoices` - List available voices for text-to-speech
 - `/setvoice` - Choose a voice for text-to-speech
 - `/currentvoice` - Show the currently selected voice
+- `/add_voice` - Add a custom voice for text-to-speech (one per user)
+- `/delete_custom_voice` - Delete your custom voice
 - `/history` - Show your recent conversations
 - `/generate_image <prompt>` - Generate an image based on a text prompt using DALL-E 3
 - `/analyze_image` - Analyze an image (send this command as a caption with an image)
