@@ -45,18 +45,6 @@ async def list_voices(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     voices_text = "Available voices:\n" + "\n".join([f"• {name}" for name in voices.values()])
     await update.message.reply_text(voices_text)
 
-async def voice_button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    
-    if query.data.startswith("voice_"):
-        voice_id = query.data.split("_")[1]
-        context.user_data['voice_id'] = voice_id
-        voices = await get_voices()
-        voice_name = voices.get(voice_id, "Unknown")
-        logger.info(f"User {update.effective_user.id} set voice to {voice_name} (ID: {voice_id})")
-        await query.edit_message_text(f"Voice set to {voice_name}")
-
 async def set_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("set_voice")
     logger.info(f"User {update.effective_user.id} initiated voice selection")
@@ -69,7 +57,9 @@ async def set_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     keyboard = []
     row = []
     for voice_id, name in sorted_voices:
-        row.append(InlineKeyboardButton(name, callback_data=f"voice_{voice_id}"))
+        # Truncate the voice_id to ensure callback data isn't too long
+        truncated_id = voice_id[:8]  # First 8 characters should be unique enough
+        row.append(InlineKeyboardButton(name, callback_data=f"voice_{truncated_id}"))
         if len(row) == 2:
             keyboard.append(row)
             row = []
@@ -80,6 +70,27 @@ async def set_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     await update.message.reply_text("Please choose a voice:", reply_markup=reply_markup)
 
+# In handlers/voice_handlers.py
+
+async def voice_button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data.startswith("voice_"):
+        truncated_id = query.data.split("_")[1]
+        voices = await get_voices()
+        
+        # Find the full voice_id that starts with the truncated_id
+        voice_id = next((vid for vid in voices.keys() if vid.startswith(truncated_id)), None)
+        
+        if voice_id:
+            context.user_data['voice_id'] = voice_id
+            voice_name = voices.get(voice_id, "Unknown")
+            logger.info(f"User {update.effective_user.id} set voice to {voice_name} (ID: {voice_id})")
+            await query.edit_message_text(f"Voice set to {voice_name}")
+        else:
+            logger.error(f"Voice ID not found for truncated ID: {truncated_id}")
+            await query.edit_message_text("Error setting voice. Please try again.")
 
 async def current_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("current_voice")
@@ -229,10 +240,9 @@ async def delete_voice_from_elevenlabs(voice_id):
     try:
         response = requests.delete(url, headers=headers)
         response.raise_for_status()
-        logger.info(f"Voice {voice_id} deleted successfully from ElevenLabs")
         return True
     except Exception as e:
-        logger.exception(f"Error deleting voice {voice_id} from ElevenLabs: {str(e)}")
+        logger.exception(f"Error deleting voice from ElevenLabs: {str(e)}")
         return False
 
 voice_addition_handler = ConversationHandler(
@@ -251,6 +261,5 @@ __all__ = [
     'tts_command',
     'start_voice_addition',
     'delete_custom_voice',
-    'voice_addition_handler',
-    'voice_button_callback'
+    'voice_addition_handler'
 ]

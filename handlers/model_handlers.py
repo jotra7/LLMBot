@@ -42,20 +42,16 @@ async def current_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.info(f"User {update.effective_user.id} checked current model: {models.get(current, 'Unknown')}")
     await update.message.reply_text(f"Current model: {models.get(current, 'Unknown')}")
 
+
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     
-    if query.data.startswith("voice_"):
-        voice_id = query.data.split("_")[1]
-        context.user_data['voice_id'] = voice_id
-        voices = await get_voices()
-        logger.info(f"User {update.effective_user.id} set voice to {voices.get(voice_id, 'Unknown')}")
-        await query.edit_message_text(f"Voice set to {voices.get(voice_id, 'Unknown')}")
-    else:
-        # Handle model selection
+    if query.data in await get_models():  # Only handle model-related callbacks
         chosen_model = query.data
         context.user_data['model'] = chosen_model
         models = await get_models()
         logger.info(f"User {update.effective_user.id} set model to {models.get(chosen_model, 'Unknown')}")
         await query.edit_message_text(f"Model set to {models.get(chosen_model, 'Unknown')}")
+    else:
+        logger.warning(f"Unhandled callback query: {query.data}")

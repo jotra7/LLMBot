@@ -83,10 +83,12 @@ def create_application():
     application.add_error_handler(message_handlers.error_handler)
 
     # Add callback query handlers
-    application.add_handler(CallbackQueryHandler(model_handlers.button_callback))
+    # Add callback query handlers
     application.add_handler(CallbackQueryHandler(voice_handlers.voice_button_callback, pattern=r"^voice_"))
     application.add_handler(CallbackQueryHandler(flux_handlers.flux_model_callback, pattern=r"^set_flux_model:"))
     application.add_handler(CallbackQueryHandler(leonardo_handlers.leonardo_model_callback, pattern="^leo_model:"))
+    application.add_handler(CallbackQueryHandler(model_handlers.button_callback))  # This should be the last one
+ 
 
     return application
 
