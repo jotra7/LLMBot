@@ -50,7 +50,7 @@ async def generate_text_to_video(update: Update, context: ContextTypes.DEFAULT_T
                     "num_frames": 64,
                     "num_inference_steps": 25,
                     "guidance_scale": 7.5,
-                    "fps": 16,
+                    "fps": 8,
                     "video_size": "square"
                 }
             ))
