@@ -1,7 +1,7 @@
 import base64
 from utils import openai_client
 
-async def generate_image_openai(prompt):
+def generate_image_openai(prompt):
     response = openai_client.images.generate(
         model="dall-e-3",
         prompt=prompt,

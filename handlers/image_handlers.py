@@ -1,12 +1,14 @@
 import logging
 import asyncio
 import time
+import functools
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 from image_processing import generate_image_openai, analyze_image_openai
 from performance_metrics import record_command_usage, record_response_time, record_error
 from queue_system import queue_task
+from image_processing import generate_image_openai
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +38,10 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         progress_task = asyncio.create_task(update_progress())
 
         try:
-            image_url = await generate_image_openai(prompt)
+            # Run the OpenAI API call in a separate thread
+            loop = asyncio.get_running_loop()
+            image_url = await loop.run_in_executor(None, functools.partial(generate_image_openai, prompt))
+            
             await update.message.reply_photo(photo=image_url, caption=f"Generated image for: {prompt}")
         finally:
             # Cancel the progress task
@@ -54,6 +59,7 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error(f"Image generation error for user {update.effective_user.id}: {str(e)}")
         await progress_message.edit_text(f"An error occurred while generating the image: {str(e)}")
         record_error("image_generation_error")
+
 
 @queue_task('long_run')
 async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
