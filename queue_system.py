@@ -20,7 +20,6 @@ class TaskQueue:
         logger.info(f"Adding {task_type} task for user {user_id} to queue")
         await self.queues[task_type].put((user_id, task_func, args, kwargs))
         logger.info(f"{task_type.capitalize()} task added to queue for user {user_id}. Queue size: {self.queues[task_type].qsize()}")
-        # Start processing the queue if it's not already running
         if task_type not in self.workers or self.workers[task_type].done():
             self.workers[task_type] = asyncio.create_task(self.worker(task_type))
 
@@ -28,12 +27,9 @@ class TaskQueue:
         logger.info(f"Worker for {queue_type} queue started")
         while True:
             try:
-                logger.info(f"Worker for {queue_type} queue waiting for next task")
                 user_id, task_func, args, kwargs = await self.queues[queue_type].get()
-                logger.info(f"Worker for {queue_type} queue received task for user {user_id}")
                 logger.info(f"Processing {queue_type} task for user {user_id}")
                 try:
-                    # Run the task
                     await task_func(*args, **kwargs)
                     logger.info(f"{queue_type.capitalize()} task completed for user {user_id}")
                 except Exception as e:
@@ -41,11 +37,8 @@ class TaskQueue:
                     logger.exception("Exception details:")
                 finally:
                     self.queues[queue_type].task_done()
-                    logger.info(f"Task for user {user_id} in {queue_type} queue marked as done")
             except Exception as e:
                 logger.error(f"Error in {queue_type} worker: {str(e)}")
-                logger.exception("Exception details:")
-                # Add a small delay before continuing to avoid tight loop in case of persistent errors
                 await asyncio.sleep(1)
 
     def start(self):
@@ -61,10 +54,22 @@ def queue_task(task_type='quick'):
         async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
             user_id = update.effective_user.id
             logger.info(f"Queueing {task_type} task for user {user_id}")
-            task = asyncio.create_task(task_queue.add_task(task_type, user_id, func, update, context, *args, **kwargs))
-#            if task_type == 'long_run':
-#                await update.message.reply_text("Your request has been queued. You'll be notified when it's ready.")
-            # Don't await the task here, let it run in the background
+            
+            async def task_wrapper():
+                try:
+                    result = await func(update, context, *args, **kwargs)
+                    if task_type == 'long_run':
+                        await update.message.reply_text("Your requested task has been completed.")
+                    return result
+                except Exception as e:
+                    logger.error(f"Error in {task_type} task for user {user_id}: {str(e)}")
+                    await update.message.reply_text("An error occurred while processing your request. Please try again later.")
+            
+            await task_queue.add_task(task_type, user_id, task_wrapper)
+            
+            if task_type == 'long_run':
+                await update.message.reply_text("Your request has been queued. You'll be notified when it's ready.")
+        
         return wrapper
     return decorator
 

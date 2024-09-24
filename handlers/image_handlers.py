@@ -20,22 +20,30 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     prompt = ' '.join(context.args)
     logger.info(f"User {update.effective_user.id} requested image generation: '{prompt[:50]}...'")
 
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+    progress_message = await update.message.reply_text("🎨 Initializing image generation...")
 
     start_time = time.time()
     try:
-        async def keep_typing():
+        # Create a progress updater
+        async def update_progress():
+            dots = 0
             while True:
-                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
-                await asyncio.sleep(5)
+                await progress_message.edit_text(f"🎨 Generating image{'.' * dots}")
+                dots = (dots + 1) % 4
+                await asyncio.sleep(2)
 
-        typing_task = asyncio.create_task(keep_typing())
+        # Start the progress updater
+        progress_task = asyncio.create_task(update_progress())
 
         try:
             image_url = await generate_image_openai(prompt)
             await update.message.reply_photo(photo=image_url, caption=f"Generated image for: {prompt}")
         finally:
-            typing_task.cancel()
+            # Cancel the progress task
+            progress_task.cancel()
+            
+            # Delete the progress message
+            await progress_message.delete()
 
         end_time = time.time()
         response_time = end_time - start_time
@@ -44,7 +52,7 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     except Exception as e:
         logger.error(f"Image generation error for user {update.effective_user.id}: {str(e)}")
-        await update.message.reply_text(f"An error occurred while generating the image: {str(e)}")
+        await progress_message.edit_text(f"An error occurred while generating the image: {str(e)}")
         record_error("image_generation_error")
 
 @queue_task('long_run')
