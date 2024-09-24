@@ -46,32 +46,43 @@ async def list_voices(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await update.message.reply_text(voices_text)
 
 async def set_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
     record_command_usage("set_voice")
-    logger.info(f"User {update.effective_user.id} initiated voice selection")
-    voices = await get_voices()
+    logger.info(f"User {user_id} initiated voice selection")
     
-    # Create a list of voices, sorted alphabetically by name
-    sorted_voices = sorted(voices.items(), key=lambda x: x[1])
-    
-    # Create buttons for each voice, with 2 buttons per row
-    keyboard = []
-    row = []
-    for voice_id, name in sorted_voices:
-        # Truncate the voice_id to ensure callback data isn't too long
-        truncated_id = voice_id[:8]  # First 8 characters should be unique enough
-        row.append(InlineKeyboardButton(name, callback_data=f"voice_{truncated_id}"))
-        if len(row) == 2:
+    try:
+        voices = await get_voices()
+        logger.info(f"Retrieved {len(voices)} voices for user {user_id}")
+        
+        if not voices:
+            logger.warning(f"No voices available for user {user_id}")
+            await update.message.reply_text("No voices are currently available. Please try again later.")
+            return
+        
+        sorted_voices = sorted(voices.items(), key=lambda x: x[1])
+        logger.info(f"Sorted {len(sorted_voices)} voices for user {user_id}")
+        
+        keyboard = []
+        row = []
+        for voice_id, name in sorted_voices:
+            truncated_id = voice_id[:8]
+            row.append(InlineKeyboardButton(name, callback_data=f"voice_{truncated_id}"))
+            if len(row) == 2:
+                keyboard.append(row)
+                row = []
+        if row:
             keyboard.append(row)
-            row = []
-    if row:  # Add any remaining buttons
-        keyboard.append(row)
+        
+        logger.info(f"Created keyboard with {len(keyboard)} rows for user {user_id}")
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("Please choose a voice:", reply_markup=reply_markup)
+        logger.info(f"Sent voice selection message to user {user_id}")
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text("Please choose a voice:", reply_markup=reply_markup)
-
-# In handlers/voice_handlers.py
-
+    except Exception as e:
+        logger.error(f"Error in set_voice for user {user_id}: {str(e)}")
+        await update.message.reply_text("An error occurred while setting up voice selection. Please try again later.")
+        
 async def voice_button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
