@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import time
+import functools
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from config import FLUX_MODELS, DEFAULT_FLUX_MODEL
@@ -52,17 +53,13 @@ async def flux_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     prompt = ' '.join(context.args)
     logger.info(f"User {update.effective_user.id} requested Flux image generation: '{prompt[:50]}...'")
 
-    # Send an initial message
-    progress_message = await update.message.reply_text("🎨 Initializing image generation...")
+    progress_message = await update.message.reply_text("🎨 Initializing Flux image generation...")
 
     start_time = time.time()
     try:
-        logger.info("Starting Flux image generation process")
-        
         model_name = context.user_data.get('flux_model', DEFAULT_FLUX_MODEL)
         model_id = FLUX_MODELS[model_name]
 
-        # Create a progress updater
         async def update_progress():
             steps = [
                 "Analyzing prompt", "Preparing canvas", "Sketching outlines", 
@@ -76,14 +73,14 @@ async def flux_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 await progress_message.edit_text(f"🎨 {step}{'.' * dots}")
                 dots = (dots + 1) % 4
                 step_index += 1
-                await asyncio.sleep(2)  # Update every 2 seconds
+                await asyncio.sleep(2)
 
-        # Start the progress updater
         progress_task = asyncio.create_task(update_progress())
 
         try:
-            logger.info(f"Submitting Flux image generation request with model: {model_name}")
-            handler = fal_client.submit(
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(None, functools.partial(
+                fal_client.run,
                 model_id,
                 arguments={
                     "prompt": prompt,
@@ -92,35 +89,19 @@ async def flux_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     "guidance_scale": 3.5,
                     "num_images": 1,
                     "safety_tolerance": "2" if model_name == "flux-pro" else None,
-                },
-            )
+                }
+            ))
 
-            logger.info("Waiting for Flux image generation result")
-            result = handler.get()
-            logger.info("Flux image generation result received")
-            
-            # Cancel the progress task
-            progress_task.cancel()
-            
-            # Update the progress message
-            await progress_message.edit_text("✅ Image generated! Uploading...")
-            
             if result and result.get('images') and len(result['images']) > 0:
                 image_url = result['images'][0]['url']
                 logger.info(f"Image URL received: {image_url}")
                 await update.message.reply_photo(photo=image_url, caption=f"Generated image using {model_name} for: {prompt}")
-                
-                # Delete the progress message
-                await progress_message.delete()
             else:
                 logger.error("No image URL in the result")
-                await progress_message.edit_text("Sorry, I couldn't generate an image. Please try again.")
-        except Exception as e:
-            logger.error(f"Error during Flux image generation: {str(e)}")
-            await progress_message.edit_text(f"An error occurred while generating the image: {str(e)}")
+                await update.message.reply_text("Sorry, I couldn't generate an image. Please try again.")
         finally:
-            if not progress_task.cancelled():
-                progress_task.cancel()
+            progress_task.cancel()
+            await progress_message.delete()
 
         end_time = time.time()
         response_time = end_time - start_time
@@ -129,7 +110,7 @@ async def flux_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     except Exception as e:
         logger.error(f"Flux image generation error for user {update.effective_user.id}: {str(e)}")
-        await progress_message.edit_text(f"An error occurred while setting up image generation: {str(e)}")
+        await progress_message.edit_text(f"An error occurred while generating the image: {str(e)}")
         record_error("flux_image_generation_error")
     finally:
         logger.info(f"Flux command execution completed for user {update.effective_user.id}")
