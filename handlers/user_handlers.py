@@ -12,7 +12,8 @@ from database import get_user_conversations, save_conversation
 from utils import anthropic_client
 from performance_metrics import record_command_usage, record_response_time, record_model_usage, record_error
 from queue_system import queue_task
-from storage import delete_user_session
+from database import get_user_conversations, save_conversation, delete_user_session
+
 
 logger = logging.getLogger(__name__)
 CHOOSING, GUIDED_TOUR, BUG_REPORT, BUG_SCREENSHOT = range(4)

@@ -4,10 +4,10 @@ import os
 from logging.handlers import RotatingFileHandler
 from bot import initialize_bot
 from model_cache import update_model_cache
-from storage import init_db
 from performance_metrics import init_performance_db
 from queue_system import start_task_queue
 from config import ADMIN_USER_IDS
+from database import init_db
 
 def setup_logging():
     log_dir = "./logs"

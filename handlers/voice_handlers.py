@@ -10,7 +10,7 @@ from config import ELEVENLABS_API_KEY, ELEVENLABS_SOUND_GENERATION_API_URL
 from voice_cache import get_voices, get_default_voice, update_voice_cache
 from performance_metrics import record_command_usage, record_error, record_response_time
 from queue_system import queue_task
-from storage import get_user_session, update_user_session
+from database import get_user_session, update_user_session
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +140,7 @@ async def tts_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.error(f"TTS error for user {update.effective_user.id}: {str(e)}")
         await update.message.reply_text(f"An error occurred while generating speech: {str(e)}")
         record_error("tts_error")
-        
+
 async def start_voice_addition(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     user_session = get_user_session(user_id)

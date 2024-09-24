@@ -2,7 +2,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from config import ADMIN_USER_IDS, DEFAULT_SYSTEM_MESSAGE
-from database import get_all_users, ban_user, unban_user
+from database import get_all_users, get_user_count, ban_user, unban_user
 from performance_metrics import record_command_usage, get_performance_metrics, save_performance_data
 from model_cache import update_model_cache
 
@@ -60,8 +60,7 @@ async def admin_user_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text("You don't have permission to use this command.")
         return
     
-    users = get_all_users()
-    total_users = len(users)
+    total_users = get_user_count()
     await update.message.reply_text(f"Total users: {total_users}")
 
 async def admin_ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
