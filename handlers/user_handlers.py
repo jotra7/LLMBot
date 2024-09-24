@@ -22,6 +22,7 @@ CHOOSING, GUIDED_TOUR, BUG_REPORT, BUG_SCREENSHOT = range(4)
 help_categories = {
     'chat': "💬 Chatting with the Bot",
     'session': "🔄 Session Management",
+    'gpt': "🤖 GPT Commands",
     'conversation': "🗨️ Conversation",
     'ai_models': "🧠 AI Models",
     'tts': "🎙️ Text-to-Speech",
@@ -41,8 +42,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     welcome_message = (
         f"👋 Welcome, {user.mention_html()}! I'm a multi-functional AI assistant bot.\n\n"
         "🧠 I can engage in conversations, answer questions, and help with various tasks.\n"
-        "🎨 I can generate and analyze images, convert text to speech, and even create short video clips!\n\n"
-        "💬 To chat with me, simply type your message and send it. Our conversation will be contextual within a session.\n\n"
+        "🎨 I can generate and analyze images, convert text to speech, and even create short video clips!\n"
+        "🤖 I now support GPT models for additional AI capabilities!\n\n"
+        "💬 To chat with me, simply type your message and send it. Our conversation will be contextual within a session.\n"
+        "   You can also use /gpt followed by your message to interact with GPT models.\n\n"
         "🔄 Your session starts now and lasts until you end it or after a period of inactivity. Use /delete_session to end it manually.\n\n"
         "🔧 You can customize my behavior using a system message. "
         f"The current system message is:\n\n\"{context.user_data.get('system_message', DEFAULT_SYSTEM_MESSAGE)}\"\n\n"
@@ -56,7 +59,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         [InlineKeyboardButton("🎨 Generate Image", callback_data="generate_image"),
          InlineKeyboardButton("🗣️ Text to Speech", callback_data="text_to_speech")],
         [InlineKeyboardButton("💬 Chat Info", callback_data="help_chat"),
-         InlineKeyboardButton("🔄 Session Info", callback_data="help_session")]
+         InlineKeyboardButton("🤖 GPT Info", callback_data="help_gpt")],
+        [InlineKeyboardButton("🔄 Session Info", callback_data="help_session")]
     ]
 
     if is_admin:
@@ -72,6 +76,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     
     logger.info(f"User {user.id} at start menu")
     return CHOOSING
+
 
 async def help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -129,10 +134,11 @@ def get_help_text(category):
             "• Ask questions, seek advice, or chat casually on various topics.\n"
             "• In group chats, mention me (@bot_username) to get my attention.\n"
             "• Our conversation is contextual within the current session.\n"
-            "• Use commands during our chat for specific tasks.\n\n"
+            "• Use commands during our chat for specific tasks.\n"
+            "• Use /gpt followed by your message to chat with GPT models.\n\n"
             "Start chatting to explore my capabilities!"
         ),
-        'session': (
+         'session': (
             "🔄 Session Management\n\n"
             "Understanding sessions enhances our interaction:\n"
             "• A session starts when you begin chatting and maintains context.\n"
@@ -152,10 +158,22 @@ def get_help_text(category):
         'ai_models': (
             "🧠 AI Models\n\n"
             "Choose the AI model that suits your needs:\n"
-            "• /listmodels - View available AI models.\n"
-            "• /setmodel - Change the active AI model.\n"
-            "• /currentmodel - Check the current model in use.\n\n"
+            "• /listmodels - View available Claude AI models.\n"
+            "• /setmodel - Change the active Claude AI model.\n"
+            "• /currentmodel - Check the current Claude model in use.\n"
+            "• /list_gpt_models - View available GPT models.\n"
+            "• /set_gpt_model - Choose a GPT model to use.\n"
+            "• /current_gpt_model - Check the current GPT model in use.\n\n"
             "Experiment with different models for varied interactions!"
+        ),
+        'gpt': (
+            "🤖 GPT Commands\n\n"
+            "Interact with OpenAI's GPT models:\n"
+            "• /gpt <message> - Send a message to the current GPT model.\n"
+            "• /list_gpt_models - View all available GPT models.\n"
+            "• /set_gpt_model - Choose a specific GPT model to use.\n"
+            "• /current_gpt_model - Check which GPT model is currently active.\n\n"
+            "GPT models offer powerful language understanding and generation capabilities!"
         ),
         'tts': (
             "🎙️ Text-to-Speech\n\n"

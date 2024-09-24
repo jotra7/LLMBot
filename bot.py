@@ -9,7 +9,8 @@ from handlers import (
     admin_handlers,
     flux_handlers,
     message_handlers,
-    leonardo_handlers
+    leonardo_handlers,
+    gpt_handlers
 )
 from model_cache import periodic_cache_update
 from voice_cache import periodic_voice_cache_update
@@ -72,6 +73,9 @@ def create_application():
     application.add_handler(CommandHandler("current_leonardo_model", leonardo_handlers.current_leonardo_model))
     application.add_handler(CommandHandler("leo", leonardo_handlers.leonardo_generate_image))
     application.add_handler(CommandHandler("unzoom", leonardo_handlers.leonardo_unzoom))
+
+    # Add GPT handlers
+    gpt_handlers.setup_gpt_handlers(application)
 
     # Add message handler
     application.add_handler(MessageHandler(
