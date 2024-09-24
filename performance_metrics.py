@@ -1,9 +1,10 @@
 import time
 from collections import defaultdict
-import sqlite3
+import psycopg2
 import statistics
 import logging
 from telegram.ext import ContextTypes
+from database import get_postgres_connection
 
 logger = logging.getLogger(__name__)
 
@@ -16,16 +17,16 @@ performance_data = {
 }
 
 def init_performance_db():
-    conn = sqlite3.connect('performance_metrics.db')
+    conn = get_postgres_connection()
     cursor = conn.cursor()
     
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS response_times (
-        id INTEGER PRIMARY KEY,
-        timestamp REAL,
-        avg_duration REAL,
-        min_duration REAL,
-        max_duration REAL
+        id SERIAL PRIMARY KEY,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        avg_duration FLOAT,
+        min_duration FLOAT,
+        max_duration FLOAT
     )
     ''')
 
@@ -71,7 +72,7 @@ def record_error(error_type):
     logger.debug(f"Recorded error: {error_type}")
 
 async def save_performance_data(context: ContextTypes.DEFAULT_TYPE = None):
-    conn = sqlite3.connect('performance_metrics.db')
+    conn = get_postgres_connection()
     cursor = conn.cursor()
 
     # Save response times
@@ -79,29 +80,41 @@ async def save_performance_data(context: ContextTypes.DEFAULT_TYPE = None):
         avg_duration = statistics.mean(performance_data['response_times'])
         min_duration = min(performance_data['response_times'])
         max_duration = max(performance_data['response_times'])
-        cursor.execute('INSERT INTO response_times (timestamp, avg_duration, min_duration, max_duration) VALUES (?, ?, ?, ?)',
-                       (time.time(), avg_duration, min_duration, max_duration))
+        cursor.execute('INSERT INTO response_times (avg_duration, min_duration, max_duration) VALUES (%s, %s, %s)',
+                       (avg_duration, min_duration, max_duration))
         logger.info(f"Saved response times: avg={avg_duration}, min={min_duration}, max={max_duration}")
         performance_data['response_times'].clear()
 
     # Save model usage
     for model, count in performance_data['model_usage'].items():
-        cursor.execute('INSERT OR REPLACE INTO model_usage (model, count) VALUES (?, COALESCE((SELECT count FROM model_usage WHERE model = ?) + ?, ?))',
-                       (model, model, count, count))
+        cursor.execute('''
+        INSERT INTO model_usage (model, count) 
+        VALUES (%s, %s) 
+        ON CONFLICT (model) 
+        DO UPDATE SET count = model_usage.count + %s
+        ''', (model, count, count))
         logger.info(f"Saved model usage: {model} = {count}")
     performance_data['model_usage'].clear()
 
     # Save command usage
     for command, count in performance_data['command_usage'].items():
-        cursor.execute('INSERT OR REPLACE INTO command_usage (command, count) VALUES (?, COALESCE((SELECT count FROM command_usage WHERE command = ?) + ?, ?))',
-                       (command, command, count, count))
+        cursor.execute('''
+        INSERT INTO command_usage (command, count) 
+        VALUES (%s, %s) 
+        ON CONFLICT (command) 
+        DO UPDATE SET count = command_usage.count + %s
+        ''', (command, count, count))
         logger.info(f"Saved command usage: {command} = {count}")
     performance_data['command_usage'].clear()
 
     # Save errors
     for error_type, count in performance_data['errors'].items():
-        cursor.execute('INSERT OR REPLACE INTO errors (error_type, count) VALUES (?, COALESCE((SELECT count FROM errors WHERE error_type = ?) + ?, ?))',
-                       (error_type, error_type, count, count))
+        cursor.execute('''
+        INSERT INTO errors (error_type, count) 
+        VALUES (%s, %s) 
+        ON CONFLICT (error_type) 
+        DO UPDATE SET count = errors.count + %s
+        ''', (error_type, count, count))
         logger.info(f"Saved error count: {error_type} = {count}")
     performance_data['errors'].clear()
 
@@ -110,7 +123,7 @@ async def save_performance_data(context: ContextTypes.DEFAULT_TYPE = None):
     logger.info("Performance data saved to database")
 
 def get_performance_metrics():
-    conn = sqlite3.connect('performance_metrics.db')
+    conn = get_postgres_connection()
     cursor = conn.cursor()
 
     cursor.execute('SELECT AVG(avg_duration) FROM response_times')

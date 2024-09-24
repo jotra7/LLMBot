@@ -21,46 +21,68 @@ async def generate_text_to_video(update: Update, context: ContextTypes.DEFAULT_T
     user_id = update.effective_user.id
     logger.info(f"User {user_id} requested text-to-video generation: '{prompt[:50]}...'")
 
-    progress_message = await update.message.reply_text("🎬 Generating video... This may take 20-30 seconds or more.")
+    progress_message = await update.message.reply_text("🎬 Initializing video generation...")
 
+    start_time = time.time()
     try:
-        # Log the arguments being passed to the API for debugging
-        arguments = {
-            "prompt": prompt,
-            "num_frames": 32,
-            "num_inference_steps": 25,
-            "guidance_scale": 7.5,
-            "fps": 8,
-            "video_size": "square"
-        }
-        logger.info(f"Requesting video generation with arguments: {arguments}")
+        async def update_progress():
+            steps = [
+                "Analyzing prompt", "Preparing scene", "Generating frames",
+                "Rendering video", "Applying effects", "Finalizing output"
+            ]
+            step_index = 0
+            dots = 0
+            while True:
+                step = steps[step_index % len(steps)]
+                await progress_message.edit_text(f"🎬 {step}{'.' * dots}")
+                dots = (dots + 1) % 4
+                step_index += 1
+                await asyncio.sleep(2)
 
-        handler = fal_client.submit(
-            "fal-ai/fast-animatediff/text-to-video",
-            arguments=arguments
-        )
+        progress_task = asyncio.create_task(update_progress())
 
-        result = handler.get()
-        video_url = result['video']['url']
-        
-        await progress_message.edit_text("✅ Video generated! Uploading...")
+        try:
+            loop = asyncio.get_running_loop()
+            handler = await loop.run_in_executor(None, lambda: fal_client.submit(
+                "fal-ai/fast-animatediff/text-to-video",
+                arguments={
+                    "prompt": prompt,
+                    "num_frames": 150,
+                    "num_inference_steps": 25,
+                    "guidance_scale": 7.5,
+                    "fps": 30,
+                    "video_size": "square"
+                }
+            ))
 
-        video_content = requests.get(video_url).content
-        await update.message.reply_video(video_content, caption=f"Generated video for: {prompt}")
+            result = await loop.run_in_executor(None, handler.get)
+            video_url = result['video']['url']
+            
+            await progress_message.edit_text("✅ Video generated! Uploading...")
+            
+            video_content = await loop.run_in_executor(None, lambda: requests.get(video_url).content)
+            
+            await update.message.reply_video(video_content, caption=f"Generated video for: {prompt}")
+            
+            await progress_message.delete()
 
-        await progress_message.delete()
+            logger.info(f"Video generated successfully for user {user_id}")
 
-        logger.info(f"Video generated successfully for user {user_id}")
+        finally:
+            progress_task.cancel()
 
-    except fal_client.FalClientError as e:
-        # Detailed logging of the error response and request arguments
-        logger.error(f"Fal client error: {e} - Response content: {getattr(e, 'response', None)}")
-        await progress_message.edit_text(f"⚠️ Failed to generate video: {e}")
-    
+        end_time = time.time()
+        response_time = end_time - start_time
+        record_response_time(response_time)
+        logger.info(f"Video generated in {response_time:.2f} seconds")
+
     except Exception as e:
-        # General exception logging with more details
-        logger.error(f"Unexpected error during video generation: {e}")
-        await progress_message.edit_text("⚠️ An unexpected error occurred. Please try again later.")
+        logger.error(f"Video generation error for user {user_id}: {str(e)}")
+        await progress_message.edit_text(f"❌ An error occurred while generating the video: {str(e)}")
+        record_error("video_generation_error")
+    
+    finally:
+        logger.info(f"Video generation process completed for user {user_id}")
 
 @queue_task('long_run')
 async def img2video_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -80,34 +102,55 @@ async def img2video_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         file = await context.bot.get_file(photo.file_id)
         file_url = file.file_path
 
-        handler = fal_client.submit(
-            "fal-ai/stable-video",
-            arguments={
-                "image_url": file_url,
-                "motion_bucket_id": 127,
-                "cond_aug": 0.02,
-                "fps": 25
-            },
-        )
+        async def update_progress():
+            steps = [
+                "Processing image", "Generating frames", "Applying motion",
+                "Rendering video", "Finalizing output"
+            ]
+            step_index = 0
+            dots = 0
+            while True:
+                step = steps[step_index % len(steps)]
+                await progress_message.edit_text(f"🎬 {step}{'.' * dots}")
+                dots = (dots + 1) % 4
+                step_index += 1
+                await asyncio.sleep(2)
 
-        result = handler.get()
-        
-        await progress_message.edit_text("✅ Video generated! Uploading...")
-        
-        if result and result.get('video') and result['video'].get('url'):
-            video_url = result['video']['url']
-            video_content = requests.get(video_url).content
+        progress_task = asyncio.create_task(update_progress())
+
+        try:
+            loop = asyncio.get_running_loop()
+            handler = await loop.run_in_executor(None, lambda: fal_client.submit(
+                "fal-ai/stable-video",
+                arguments={
+                    "image_url": file_url,
+                    "motion_bucket_id": 127,
+                    "cond_aug": 0.02,
+                    "fps": 25
+                },
+            ))
+
+            result = await loop.run_in_executor(None, handler.get)
             
-            await update.message.reply_video(
-                video_content, 
-                caption="Generated video from the image",
-                supports_streaming=True
-            )
+            await progress_message.edit_text("✅ Video generated! Uploading...")
             
-            await progress_message.delete()
-        else:
-            logger.error("No video URL in the result")
-            await progress_message.edit_text("Sorry, I couldn't generate a video. Please try again.")
+            if result and result.get('video') and result['video'].get('url'):
+                video_url = result['video']['url']
+                video_content = await loop.run_in_executor(None, lambda: requests.get(video_url).content)
+                
+                await update.message.reply_video(
+                    video_content, 
+                    caption="Generated video from the image",
+                    supports_streaming=True
+                )
+                
+                await progress_message.delete()
+            else:
+                logger.error("No video URL in the result")
+                await progress_message.edit_text("Sorry, I couldn't generate a video. Please try again.")
+
+        finally:
+            progress_task.cancel()
 
     except Exception as e:
         logger.error(f"Img2Video conversion error for user {user_id}: {str(e)}")
@@ -119,4 +162,3 @@ async def img2video_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         response_time = end_time - start_time
         record_response_time(response_time)
         logger.info(f"Img2Video conversion completed in {response_time:.2f} seconds")
-        
