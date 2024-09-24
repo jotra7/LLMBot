@@ -82,7 +82,7 @@ async def set_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception as e:
         logger.error(f"Error in set_voice for user {user_id}: {str(e)}")
         await update.message.reply_text("An error occurred while setting up voice selection. Please try again later.")
-        
+
 async def voice_button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -122,8 +122,15 @@ async def tts_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     voice_id = context.user_data.get('voice_id')
 
     if not voice_id:
-        await update.message.reply_text("No voice is set for text-to-speech. Please use the /setvoice command first.")
-        return
+        # Automatically set a default voice
+        voices = await get_voices()
+        if voices:
+            voice_id = next(iter(voices))  # Get the first available voice
+            context.user_data['voice_id'] = voice_id
+            await update.message.reply_text(f"No voice was set. I've automatically selected a default voice for you. You can change it later with /setvoice.")
+        else:
+            await update.message.reply_text("No voices are available. Please try again later.")
+            return
 
     logger.info(f"User {update.effective_user.id} requested TTS: '{text[:50]}...'")
     try:
@@ -133,7 +140,7 @@ async def tts_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.error(f"TTS error for user {update.effective_user.id}: {str(e)}")
         await update.message.reply_text(f"An error occurred while generating speech: {str(e)}")
         record_error("tts_error")
-
+        
 async def start_voice_addition(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     user_session = get_user_session(user_id)
