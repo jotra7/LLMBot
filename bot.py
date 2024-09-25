@@ -110,13 +110,7 @@ async def initialize_bot():
     # Initialize the application
     await application.initialize()
     
-    # Notify admins that the bot has started
-    for admin_id in ADMIN_USER_IDS:
-        try:
-            await application.bot.send_message(chat_id=admin_id, text='🚀 Bot has been started successfully!')
-        except Exception as e:
-            print(f"Failed to send startup notification to admin {admin_id}: {str(e)}")
-    
+
     return application
 
 # Keep any other existing functions in bot.py if needed

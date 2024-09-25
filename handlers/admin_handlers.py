@@ -21,16 +21,6 @@ async def on_startup(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Failed to send startup notification to admin {admin_id}: {e}")
 
-async def notify_admins(context: ContextTypes.DEFAULT_TYPE):
-    for admin_id in ADMIN_USER_IDS:
-        try:
-            await context.bot.send_message(
-                chat_id=admin_id,
-#                text="🚀 Bot has started! You are registered as an admin."
-            )
-            logger.info(f"Sent startup notification to admin {admin_id}")
-        except Exception as e:
-            logger.error(f"Failed to send startup notification to admin {admin_id}: {e}")
 
 async def admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("admin_broadcast")
