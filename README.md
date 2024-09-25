@@ -25,6 +25,7 @@ This project implements a feature-rich Telegram bot powered by Anthropic's langu
 ## Prerequisites
 
 - Python 3.7 or higher
+- PostgreSQL database
 - A Telegram Bot Token (obtainable from BotFather on Telegram)
 - An Anthropic API key
 - An OpenAI API key
@@ -45,7 +46,7 @@ This project implements a feature-rich Telegram bot powered by Anthropic's langu
    pip install -r requirements.txt
    ```
 
-3. Create a `.env` file in the project root and add your API keys:
+3. Create a `.env` file in the project root and add your API keys and database configuration:
    ```
    TELEGRAM_BOT_TOKEN=your_telegram_bot_token
    ANTHROPIC_API_KEY=your_anthropic_api_key
@@ -53,78 +54,37 @@ This project implements a feature-rich Telegram bot powered by Anthropic's langu
    ELEVENLABS_API_KEY=your_elevenlabs_api_key
    FAL_KEY=your_fal_ai_api_key
    LEONARDO_AI_KEY=your_leonardo_ai_key
+   POSTGRES_DB=your_database_name
+   POSTGRES_USER=your_database_user
+   POSTGRES_PASSWORD=your_database_password
+   POSTGRES_HOST=localhost
+   POSTGRES_PORT=5432
    ```
 
 ## Database Setup
 
-This bot requires a PostgreSQL database. Follow these steps to set up the database for a new installation:
+1. Ensure PostgreSQL is installed and running on your system.
 
-1. Install PostgreSQL if you haven't already. On Ubuntu, you can use:
+2. Create a PostgreSQL superuser if you haven't already:
    ```
-   sudo apt-get update
-   sudo apt-get install postgresql postgresql-contrib
-   ```
-
-2. Switch to the PostgreSQL user:
-   ```
-   sudo -i -u postgres
+   sudo -u postgres createuser --superuser your_superuser_name
    ```
 
-3. Start the PostgreSQL shell:
+3. Set a password for the superuser:
    ```
-   psql
-   ```
-
-4. Create a new database for the bot:
-   ```sql
-   CREATE DATABASE llmbot_db;
-   ```
-
-5. Create a new user for the bot:
-   ```sql
-   CREATE USER llmbot WITH PASSWORD 'your_secure_password';
-   ```
-   Replace 'your_secure_password' with a strong, secure password.
-
-6. Grant privileges to the new user:
-   ```sql
-   GRANT ALL PRIVILEGES ON DATABASE llmbot_db TO llmbot;
-   ```
-
-7. Connect to the new database:
-   ```sql
-   \c llmbot_db
-   ```
-
-8. Grant additional necessary permissions:
-   ```sql
-   GRANT USAGE ON SCHEMA public TO llmbot;
-   GRANT CREATE ON SCHEMA public TO llmbot;
-   GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO llmbot;
-   GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO llmbot;
-   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO llmbot;
-   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO llmbot;
-   ```
-
-9. Exit the PostgreSQL shell:
-   ```
+   sudo -u postgres psql
+   ALTER USER your_superuser_name WITH PASSWORD 'your_secure_password';
    \q
    ```
 
-10. Exit the PostgreSQL user session:
-    ```
-    exit
-    ```
+4. Update the `POSTGRES_PASSWORD` in your `.env` file with the superuser password.
 
-11. Update the `.env` file in the root directory of the bot project with the new database details:
-    ```
-    POSTGRES_DB=llmbot_db
-    POSTGRES_USER=llmbot
-    POSTGRES_PASSWORD=your_secure_password
-    POSTGRES_HOST=localhost
-    POSTGRES_PORT=5432
-    ```
-    Replace `your_secure_password` with the actual password you set in step 5.
+5. Run the database initialization script:
+   ```
+   python initdb.py
+   ```
+
+   This script will create the database, user, and necessary tables for the application.
 
 ## Usage
 
@@ -135,6 +95,36 @@ python main.py
 ```
 
 Once the bot is running, you can interact with it on Telegram using the following commands:
+
+[List of commands remains the same as in the original README]
+
+## Project Structure
+
+- `main.py`: The entry point of the application
+- `bot.py`: Contains the main bot logic and command handlers
+- `config.py`: Manages configuration and environment variables
+- `handlers/`: Directory containing various command and functionality handlers
+- `database.py`: Handles conversation history storage and retrieval, user management
+- `performance_metrics.py`: Manages performance tracking and metrics
+- `model_cache.py`: Handles caching and retrieval of Anthropic models
+- `voice_cache.py`: Manages caching and retrieval of Eleven Labs voices
+- `image_processing.py`: Handles image generation and analysis
+- `utils.py`: Contains utility functions and periodic tasks
+- `queue_system.py`: Implements the concurrent task queue system
+- `initdb.py`: Database initialization script
+
+## Customization
+
+You can customize the bot's behavior by modifying the following:
+
+- The default model in `config.py`
+- The default system message in `config.py`
+- The text-to-speech parameters in the `generate_speech` function
+- The video generation parameters in the `generate_text_to_video` function
+- The Flux image generation parameters in the `flux_command` function
+- The periodic update intervals for model and voice caches
+- The performance data save interval in `bot.py`
+- The number of conversations to retrieve in the history command
 
 ### User Commands
 
@@ -147,7 +137,7 @@ Once the bot is running, you can interact with it on Telegram using the followin
 - `/video <prompt>` - Generate a short video clip based on a text prompt
 - `/flux <prompt>` - Generate a realistic image using Fal.ai's Flux model
 - `/list_flux_models` - List available Flux AI models
-- `/set_flux_model <model_name>` - Set the Flux AI model to use
+- `/set_flux_model` - Set the Flux AI model to use
 - `/current_flux_model` - Show the currently selected Flux AI model
 - `/listvoices` - List available voices for text-to-speech
 - `/setvoice` - Choose a voice for text-to-speech
@@ -166,6 +156,12 @@ Once the bot is running, you can interact with it on Telegram using the followin
 - `/current_leonardo_model` - Show the currently selected Leonardo.ai model
 - `/unzoom` - Unzoom a Leonardo.ai generated image
 - `/img2video` - Convert an image to a short video clip
+- `/gpt <message>` - Send a message to the current GPT model
+- `/list_gpt_models` - View all available GPT models
+- `/set_gpt_model` - Choose a specific GPT model to use
+- `/current_gpt_model` - Check which GPT model is currently active
+- `/delete_session` - Clear your current session data
+- `/bug` - Report a bug or issue with the bot
 
 ### Admin Commands
 
@@ -185,6 +181,17 @@ Once the bot is running, you can interact with it on Telegram using the followin
 - `bot.py`: Contains the main bot logic and command handlers
 - `config.py`: Manages configuration and environment variables
 - `handlers/`: Directory containing various command and functionality handlers
+  - `__init__.py`: Initializes the handlers package
+  - `user_handlers.py`: Handles user-related commands
+  - `model_handlers.py`: Manages model-related commands
+  - `voice_handlers.py`: Handles voice-related commands
+  - `image_handlers.py`: Manages image generation and analysis commands
+  - `video_handlers.py`: Handles video generation commands
+  - `admin_handlers.py`: Manages admin-specific commands
+  - `flux_handlers.py`: Handles Flux AI-related commands
+  - `message_handlers.py`: Manages general message handling
+  - `leonardo_handlers.py`: Handles Leonardo.ai image generation functionality
+  - `gpt_handlers.py`: Manages GPT-related commands
 - `database.py`: Handles conversation history storage and retrieval, user management
 - `performance_metrics.py`: Manages performance tracking and metrics
 - `model_cache.py`: Handles caching and retrieval of Anthropic models
@@ -192,21 +199,7 @@ Once the bot is running, you can interact with it on Telegram using the followin
 - `image_processing.py`: Handles image generation and analysis
 - `utils.py`: Contains utility functions and periodic tasks
 - `queue_system.py`: Implements the concurrent task queue system
-- `storage.py`: Manages user session data and conversation storage
-- `leonardo_handlers.py`: Handles Leonardo.ai image generation functionality
-
-## Customization
-
-You can customize the bot's behavior by modifying the following:
-
-- The default model in `config.py`
-- The default system message in `config.py`
-- The text-to-speech parameters in the `generate_speech` function
-- The video generation parameters in the `generate_text_to_video` function
-- The Flux image generation parameters in the `flux_command` function
-- The periodic update intervals for model and voice caches
-- The performance data save interval in `bot.py`
-- The number of conversations to retrieve in the history command
+- `initdb.py`: Database initialization script
 
 ## Contributing
 
@@ -224,3 +217,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Fal.ai for their image and video generation capabilities
 - Leonardo.ai for additional image generation features
 - python-telegram-bot for the Telegram bot framework
+
