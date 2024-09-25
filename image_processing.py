@@ -1,8 +1,8 @@
 import base64
 from utils import openai_client
 
-def generate_image_openai(prompt):
-    response = openai_client.images.generate(
+async def generate_image_openai(prompt):
+    response = await openai_client.images.generate(
         model="dall-e-3",
         prompt=prompt,
         size="1024x1024",
@@ -13,8 +13,8 @@ def generate_image_openai(prompt):
 
 async def analyze_image_openai(image_bytes):
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
-    response = openai_client.chat.completions.create(
-        model="gpt-4o",
+    response = await openai_client.chat.completions.create(
+        model="gpt-4-vision-preview",
         messages=[
             {
                 "role": "user",
