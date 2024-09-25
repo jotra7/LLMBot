@@ -6,7 +6,7 @@ from config import OPENAI_API_KEY
 from utils import openai_client
 from performance_metrics import record_command_usage, record_response_time, record_model_usage, record_error
 from queue_system import queue_task
-from database import get_user_session, update_user_session, save_conversation
+from database import save_conversation, get_user_conversations
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +24,8 @@ async def fetch_gpt_models():
         logger.info(f"Set default GPT model to: {DEFAULT_GPT_MODEL}")
     except Exception as e:
         logger.error(f"Error fetching GPT models: {e}")
-        gpt_models = ["gpt-4", "gpt-4o"]
-        DEFAULT_GPT_MODEL = "gpt-4o-2024-08-06"
-
+        gpt_models = ["gpt-4", "gpt-3.5-turbo"]
+        DEFAULT_GPT_MODEL = "gpt-3.5-turbo"
 
 @queue_task('quick')
 async def gpt_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -42,15 +41,14 @@ async def gpt_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     start_time = time.time()
 
     try:
-        # Get user session and conversation history
-        session = get_user_session(user_id)
-        conversation_history = session.get('gpt_conversation', [])
-
         # Get the user's preferred model or use the default
         model = context.user_data.get('gpt_model', DEFAULT_GPT_MODEL)
 
+        # Get or initialize GPT conversation history from user context
+        gpt_conversation = context.user_data.get('gpt_conversation', [])
+        
         # Prepare messages for API call
-        messages = conversation_history + [{"role": "user", "content": user_message}]
+        messages = gpt_conversation + [{"role": "user", "content": user_message}]
 
         # Send typing action
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
@@ -64,19 +62,26 @@ async def gpt_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         assistant_response = response.choices[0].message.content
 
         # Update conversation history
-        conversation_history.append({"role": "user", "content": user_message})
-        conversation_history.append({"role": "assistant", "content": assistant_response})
-        update_user_session(user_id, {'gpt_conversation': conversation_history[-10:]})  # Keep last 10 messages
+        gpt_conversation.append({"role": "user", "content": user_message})
+        gpt_conversation.append({"role": "assistant", "content": assistant_response})
+        
+        # Keep only the last 10 messages to manage context length
+        context.user_data['gpt_conversation'] = gpt_conversation[-10:]
 
         await update.message.reply_text(assistant_response)
 
         # Save the conversation
-        save_conversation(user_id, user_message, assistant_response)
+        save_conversation(user_id, user_message, assistant_response, model_type='gpt')
 
         # Record performance metrics
         end_time = time.time()
         record_response_time(end_time - start_time)
         record_model_usage(model)
+
+    except Exception as e:
+        logger.error(f"Error processing GPT message for user {user_id}: {e}")
+        await update.message.reply_text(f"An error occurred: {e}")
+        record_error("gpt_message_processing_error")
 
     except Exception as e:
         logger.error(f"Error processing GPT message for user {user_id}: {e}")

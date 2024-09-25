@@ -28,23 +28,22 @@ def init_db():
     try:
         with get_postgres_connection() as conn:
             with conn.cursor() as cur:
+                # Create the users table if it doesn't exist
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS users
+                (id BIGINT PRIMARY KEY,
+                first_interaction TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+                """)
+
+                # Create the conversations table if it doesn't exist
                 cur.execute("""
                 CREATE TABLE IF NOT EXISTS conversations
                 (id SERIAL PRIMARY KEY, 
                 user_id BIGINT, 
                 user_message TEXT, 
                 bot_response TEXT, 
+                model_type VARCHAR(10) DEFAULT 'claude',
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
-                """)
-                cur.execute("""
-                CREATE TABLE IF NOT EXISTS users
-                (id BIGINT PRIMARY KEY,
-                first_interaction TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
-                """)
-                cur.execute("""
-                CREATE TABLE IF NOT EXISTS banned_users
-                (user_id BIGINT PRIMARY KEY,
-                banned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
                 """)
             conn.commit()
         logger.info("Database initialized successfully")
@@ -52,13 +51,13 @@ def init_db():
         logger.error(f"Error initializing database: {e}")
         raise
 
-def save_conversation(user_id: int, user_message: str, bot_response: str):
+def save_conversation(user_id: int, user_message: str, bot_response: str, model_type: str = 'claude'):
     try:
         with get_postgres_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO conversations (user_id, user_message, bot_response) VALUES (%s, %s, %s)",
-                    (user_id, user_message, bot_response)
+                    "INSERT INTO conversations (user_id, user_message, bot_response, model_type) VALUES (%s, %s, %s, %s)",
+                    (user_id, user_message, bot_response, model_type)
                 )
                 # Add user to users table if not exists
                 cur.execute(
@@ -66,17 +65,23 @@ def save_conversation(user_id: int, user_message: str, bot_response: str):
                     (user_id,)
                 )
             conn.commit()
-        logger.info(f"Conversation saved for user {user_id}")
+        logger.info(f"Conversation saved for user {user_id} using {model_type} model")
     except Exception as e:
         logger.error(f"Error saving conversation: {e}")
 
-def get_user_conversations(user_id: int, limit: int = 5) -> List[Dict[str, str]]:
+def get_user_conversations(user_id: int, limit: int = 5, model_type: Optional[str] = None) -> List[Dict[str, str]]:
     with get_postgres_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT user_message, bot_response FROM conversations WHERE user_id = %s ORDER BY timestamp DESC LIMIT %s",
-                (user_id, limit)
-            )
+            if model_type:
+                cur.execute(
+                    "SELECT user_message, bot_response FROM conversations WHERE user_id = %s AND model_type = %s ORDER BY timestamp DESC LIMIT %s",
+                    (user_id, model_type, limit)
+                )
+            else:
+                cur.execute(
+                    "SELECT user_message, bot_response FROM conversations WHERE user_id = %s ORDER BY timestamp DESC LIMIT %s",
+                    (user_id, limit)
+                )
             return [{'user_message': row[0], 'bot_response': row[1]} for row in cur.fetchall()]
 
 def get_all_users() -> List[int]:
@@ -121,6 +126,20 @@ def is_user_banned(user_id: int) -> bool:
             cur.execute('SELECT 1 FROM banned_users WHERE user_id = %s', (user_id,))
             return cur.fetchone() is not None
 
+def clear_user_conversations(user_id: int):
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM conversations WHERE user_id = %s",
+                    (user_id,)
+                )
+            conn.commit()
+        logger.info(f"Cleared all conversations for user {user_id}")
+    except Exception as e:
+        logger.error(f"Error clearing conversations for user {user_id}: {e}")
+
+
 # Redis operations
 def save_user_session(user_id: int, session_data: dict):
     session_key = f"user:{user_id}:session"
@@ -141,7 +160,8 @@ def update_user_session(user_id: int, new_data: dict):
 def delete_user_session(user_id: int):
     session_key = f"user:{user_id}:session"
     redis_client.delete(session_key)
-    logger.info(f"Deleted session for user {user_id}")
+    clear_user_conversations(user_id)
+    logger.info(f"Deleted session and cleared conversations for user {user_id}")
 
 def save_partial_response(user_id: int, message_id: str, partial_response: str):
     key = f"user:{user_id}:partial_response:{message_id}"

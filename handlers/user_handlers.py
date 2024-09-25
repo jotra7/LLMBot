@@ -12,7 +12,7 @@ from database import get_user_conversations, save_conversation
 from utils import anthropic_client
 from performance_metrics import record_command_usage, record_response_time, record_model_usage, record_error
 from queue_system import queue_task
-from database import get_user_conversations, save_conversation, delete_user_session
+from database import get_user_conversations, save_conversation, clear_user_conversations, delete_user_session
 
 
 logger = logging.getLogger(__name__)
@@ -337,12 +337,23 @@ async def delete_session_command(update: Update, context: ContextTypes.DEFAULT_T
     logger.info(f"User {user_id} requested session deletion")
 
     delete_user_session(user_id)
+    clear_user_conversations(user_id)
 
     # Clear the conversation history in the context
     if 'conversation' in context.user_data:
         del context.user_data['conversation']
+    
+    # Clear GPT-specific conversation history
+    if 'gpt_conversation' in context.user_data:
+        del context.user_data['gpt_conversation']
 
-    await update.message.reply_text("Your session history has been deleted. Your next message will start a new conversation.")
+    # Reset model to default
+    context.user_data['model'] = DEFAULT_MODEL
+
+    # Reset system message to default
+    context.user_data['system_message'] = DEFAULT_SYSTEM_MESSAGE
+
+    await update.message.reply_text("Your session history has been deleted for both Claude and GPT. Your next message will start a new conversation.")
 
 async def get_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("history")
