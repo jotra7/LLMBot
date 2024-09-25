@@ -9,6 +9,7 @@ from . import flux_handlers
 from . import message_handlers
 from . import leonardo_handlers
 from . import gpt_handlers
+from . import suno_handlers
 
 # Export all the handlers
 __all__ = [
@@ -21,4 +22,6 @@ __all__ = [
     'flux_handlers',
     'message_handlers',
     'leonardo_handlers',
+    'gpt_handlers',
+    'suno_handlers'
 ]

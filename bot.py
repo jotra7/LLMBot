@@ -10,7 +10,8 @@ from handlers import (
     flux_handlers,
     message_handlers,
     leonardo_handlers,
-    gpt_handlers
+    gpt_handlers,
+    suno_handlers
 )
 from model_cache import periodic_cache_update
 from voice_cache import periodic_voice_cache_update
@@ -76,6 +77,9 @@ def create_application():
 
     # Add GPT handlers
     gpt_handlers.setup_gpt_handlers(application)
+    # Add Suno handlers
+    suno_handlers.setup_suno_handlers(application)  # Add this line
+
 
     # Add message handler
     application.add_handler(MessageHandler(

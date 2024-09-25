@@ -1,4 +1,5 @@
 import psycopg2
+import datetime
 from psycopg2 import sql
 import redis
 import json
@@ -251,3 +252,22 @@ def get_user_stats() -> Dict[str, int]:
             "total_gpt_messages": 0,
             "active_users_24h": 0
         }
+    
+    
+def save_user_generation(user_id: int, prompt: str, generation_id: str):
+    with get_postgres_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO user_generations (user_id, prompt, generation_id, timestamp) VALUES (%s, %s, %s, %s)",
+                (user_id, prompt, generation_id, datetime.datetime.now())
+            )
+        conn.commit()
+
+def get_user_generations_today(user_id: int) -> int:
+    with get_postgres_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM user_generations WHERE user_id = %s AND timestamp >= %s",
+                (user_id, datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0))
+            )
+            return cur.fetchone()[0]
