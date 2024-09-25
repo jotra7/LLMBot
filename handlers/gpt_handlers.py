@@ -117,6 +117,8 @@ async def gpt_model_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.edit_message_text(f"GPT model set to {model}")
     logger.info(f"User {update.effective_user.id} set GPT model to {model}")
 
+
+
 async def current_gpt_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("current_gpt_model")
     model = context.user_data.get('gpt_model', DEFAULT_GPT_MODEL)
