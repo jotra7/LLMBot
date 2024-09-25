@@ -55,6 +55,77 @@ This project implements a feature-rich Telegram bot powered by Anthropic's langu
    LEONARDO_AI_KEY=your_leonardo_ai_key
    ```
 
+## Database Setup
+
+This bot requires a PostgreSQL database. Follow these steps to set up the database for a new installation:
+
+1. Install PostgreSQL if you haven't already. On Ubuntu, you can use:
+   ```
+   sudo apt-get update
+   sudo apt-get install postgresql postgresql-contrib
+   ```
+
+2. Switch to the PostgreSQL user:
+   ```
+   sudo -i -u postgres
+   ```
+
+3. Start the PostgreSQL shell:
+   ```
+   psql
+   ```
+
+4. Create a new database for the bot:
+   ```sql
+   CREATE DATABASE llmbot_db;
+   ```
+
+5. Create a new user for the bot:
+   ```sql
+   CREATE USER llmbot WITH PASSWORD 'your_secure_password';
+   ```
+   Replace 'your_secure_password' with a strong, secure password.
+
+6. Grant privileges to the new user:
+   ```sql
+   GRANT ALL PRIVILEGES ON DATABASE llmbot_db TO llmbot;
+   ```
+
+7. Connect to the new database:
+   ```sql
+   \c llmbot_db
+   ```
+
+8. Grant additional necessary permissions:
+   ```sql
+   GRANT USAGE ON SCHEMA public TO llmbot;
+   GRANT CREATE ON SCHEMA public TO llmbot;
+   GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO llmbot;
+   GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO llmbot;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO llmbot;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO llmbot;
+   ```
+
+9. Exit the PostgreSQL shell:
+   ```
+   \q
+   ```
+
+10. Exit the PostgreSQL user session:
+    ```
+    exit
+    ```
+
+11. Update the `.env` file in the root directory of the bot project with the new database details:
+    ```
+    POSTGRES_DB=llmbot_db
+    POSTGRES_USER=llmbot
+    POSTGRES_PASSWORD=your_secure_password
+    POSTGRES_HOST=localhost
+    POSTGRES_PORT=5432
+    ```
+    Replace `your_secure_password` with the actual password you set in step 5.
+
 ## Usage
 
 To start the bot, run:
