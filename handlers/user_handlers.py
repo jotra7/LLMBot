@@ -23,6 +23,7 @@ help_categories = {
     'chat': "💬 Chatting with the Bot",
     'session': "🔄 Session Management",
     'gpt': "🤖 GPT Commands",
+    'suno':"🎵 Music Generation",
     'conversation': "🗨️ Conversation",
     'ai_models': "🧠 AI Models",
     'tts': "🎙️ Text-to-Speech",
@@ -154,6 +155,12 @@ def get_help_text(category):
             "• /set_system_message - Customize my behavior and personality.\n"
             "• /get_system_message - View the current system message.\n\n"
             "A custom system message can significantly influence my responses!"
+        ),
+                
+        'suno': (
+            "🎵 Music Generation\n\n"
+            "Make your own song (Limited to 2 per day):\n"
+            "• /generate_music <prompt>  - create a song based on your prompt\n"
         ),
         'ai_models': (
             "🧠 AI Models\n\n"
