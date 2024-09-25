@@ -197,15 +197,34 @@ def get_user_stats() -> Dict[str, int]:
     try:
         with get_postgres_connection() as conn:
             with conn.cursor() as cur:
+                # Check if the necessary columns exist
                 cur.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'users' 
+                AND column_name IN ('total_messages', 'total_claude_messages', 'total_gpt_messages')
+                """)
+                existing_columns = [row[0] for row in cur.fetchall()]
+
+                # Construct the query based on existing columns
+                query = """
                 SELECT 
                     COUNT(DISTINCT id) as total_users,
-                    SUM(total_messages) as total_messages,
-                    SUM(total_claude_messages) as total_claude_messages,
-                    SUM(total_gpt_messages) as total_gpt_messages,
+                    {0}
                     COUNT(DISTINCT CASE WHEN last_interaction > NOW() - INTERVAL '24 hours' THEN id END) as active_users_24h
                 FROM users
-                """)
+                """
+
+                column_sums = []
+                for col in ['total_messages', 'total_claude_messages', 'total_gpt_messages']:
+                    if col in existing_columns:
+                        column_sums.append(f"COALESCE(SUM({col}), 0) as {col}")
+                    else:
+                        column_sums.append(f"0 as {col}")
+
+                query = query.format(', '.join(column_sums) + ',')
+
+                cur.execute(query)
                 result = cur.fetchone()
                 stats = {
                     "total_users": result[0],
@@ -218,4 +237,10 @@ def get_user_stats() -> Dict[str, int]:
         return stats
     except Exception as e:
         logger.error(f"Error retrieving user stats: {e}")
-        return {}
+        return {
+            "total_users": 0,
+            "total_messages": 0,
+            "total_claude_messages": 0,
+            "total_gpt_messages": 0,
+            "active_users_24h": 0
+        }

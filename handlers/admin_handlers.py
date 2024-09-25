@@ -50,51 +50,56 @@ async def admin_user_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text("You don't have permission to use this command.")
         return
     
-    stats = get_user_stats()
-    active_users = get_active_users(7)  # Get users active in the last 7 days
+    try:
+        stats = get_user_stats()
+        active_users = get_active_users(7)  # Get users active in the last 7 days
 
-    stats_message = (
-        f"📊 User Statistics:\n\n"
-        f"Total Users: {stats['total_users']}\n"
-        f"Total Messages: {stats['total_messages']}\n"
-        f"Claude Messages: {stats['total_claude_messages']}\n"
-        f"GPT Messages: {stats['total_gpt_messages']}\n"
-        f"Active Users (24h): {stats['active_users_24h']}\n"
-        f"Active Users (7d): {len(active_users)}\n\n"
-        f"👥 Top 10 Active Users (Last 7 Days):\n"
-    )
-
-    for user in sorted(active_users, key=lambda x: x['total_messages'], reverse=True)[:10]:
-        stats_message += (
-            f"User ID: {user['id']}\n"
-            f"Messages: {user['total_messages']} "
-            f"(Claude: {user['total_claude_messages']}, GPT: {user['total_gpt_messages']})\n"
-            f"Last Active: {user['last_interaction'].strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        stats_message = (
+            f"📊 User Statistics:\n\n"
+            f"Total Users: {stats['total_users']}\n"
+            f"Total Messages: {stats['total_messages']}\n"
+            f"Claude Messages: {stats['total_claude_messages']}\n"
+            f"GPT Messages: {stats['total_gpt_messages']}\n"
+            f"Active Users (24h): {stats['active_users_24h']}\n"
+            f"Active Users (7d): {len(active_users)}\n\n"
+            f"👥 Top 10 Active Users (Last 7 Days):\n"
         )
 
-    # Get top 10 most used commands
-    conn = get_postgres_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-    SELECT command, SUM(count) as total
-    FROM command_usage
-    GROUP BY command
-    ORDER BY total DESC
-    LIMIT 10
-    ''')
-    top_commands = cursor.fetchall()
-    conn.close()
+        for user in sorted(active_users, key=lambda x: x['total_messages'], reverse=True)[:10]:
+            stats_message += (
+                f"User ID: {user['id']}\n"
+                f"Messages: {user['total_messages']} "
+                f"(Claude: {user['total_claude_messages']}, GPT: {user['total_gpt_messages']})\n"
+                f"Last Active: {user['last_interaction'].strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            )
 
-    stats_message += "🔝 Top 10 Commands:\n"
-    for command, count in top_commands:
-        stats_message += f"{command}: {count} times\n"
+        # Get top 10 most used commands
+        conn = get_postgres_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+        SELECT command, SUM(count) as total
+        FROM command_usage
+        GROUP BY command
+        ORDER BY total DESC
+        LIMIT 10
+        ''')
+        top_commands = cursor.fetchall()
+        conn.close()
 
-    # Send the message in chunks if it's too long
-    if len(stats_message) > 4096:
-        for i in range(0, len(stats_message), 4096):
-            await update.message.reply_text(stats_message[i:i+4096])
-    else:
-        await update.message.reply_text(stats_message)
+        stats_message += "🔝 Top 10 Commands:\n"
+        for command, count in top_commands:
+            stats_message += f"{command}: {count} times\n"
+
+        # Send the message in chunks if it's too long
+        if len(stats_message) > 4096:
+            for i in range(0, len(stats_message), 4096):
+                await update.message.reply_text(stats_message[i:i+4096])
+        else:
+            await update.message.reply_text(stats_message)
+    except Exception as e:
+        logger.error(f"Error in admin_user_stats: {e}")
+        await update.message.reply_text(f"An error occurred while retrieving user stats: {e}")
+
 
 async def admin_ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("admin_ban_user")
