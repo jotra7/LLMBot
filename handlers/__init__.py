@@ -8,6 +8,7 @@ from . import admin_handlers
 from . import flux_handlers
 from . import message_handlers
 from . import leonardo_handlers
+from . import gpt_handlers
 
 # Export all the handlers
 __all__ = [

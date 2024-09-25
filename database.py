@@ -175,7 +175,13 @@ def get_active_users(days: int = 7) -> List[Dict[str, any]]:
     try:
         with get_postgres_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT * FROM get_active_users(%s)", (days,))
+                cur.execute("""
+                    SELECT id, first_interaction, last_interaction, 
+                           total_messages, total_claude_messages, total_gpt_messages
+                    FROM users
+                    WHERE last_interaction > NOW() - (%s || ' days')::INTERVAL
+                    ORDER BY last_interaction DESC
+                """, (str(days),))
                 active_users = [
                     {
                         "id": row[0],
@@ -192,6 +198,7 @@ def get_active_users(days: int = 7) -> List[Dict[str, any]]:
     except Exception as e:
         logger.error(f"Error retrieving active users: {e}")
         return []
+
     
 def get_user_stats() -> Dict[str, int]:
     try:
