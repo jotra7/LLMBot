@@ -2,7 +2,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 from config import ADMIN_USER_IDS, DEFAULT_SYSTEM_MESSAGE
-from database import get_all_users, get_user_count, ban_user, unban_user
+from database import get_all_users, get_user_stats, ban_user, unban_user, get_postgres_connection, get_active_users
 from performance_metrics import record_command_usage, get_performance_metrics, save_performance_data
 from model_cache import update_model_cache
 
@@ -60,8 +60,51 @@ async def admin_user_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text("You don't have permission to use this command.")
         return
     
-    total_users = get_user_count()
-    await update.message.reply_text(f"Total users: {total_users}")
+    stats = get_user_stats()
+    active_users = get_active_users(7)  # Get users active in the last 7 days
+
+    stats_message = (
+        f"📊 User Statistics:\n\n"
+        f"Total Users: {stats['total_users']}\n"
+        f"Total Messages: {stats['total_messages']}\n"
+        f"Claude Messages: {stats['total_claude_messages']}\n"
+        f"GPT Messages: {stats['total_gpt_messages']}\n"
+        f"Active Users (24h): {stats['active_users_24h']}\n"
+        f"Active Users (7d): {len(active_users)}\n\n"
+        f"👥 Top 10 Active Users (Last 7 Days):\n"
+    )
+
+    for user in sorted(active_users, key=lambda x: x['total_messages'], reverse=True)[:10]:
+        stats_message += (
+            f"User ID: {user['id']}\n"
+            f"Messages: {user['total_messages']} "
+            f"(Claude: {user['total_claude_messages']}, GPT: {user['total_gpt_messages']})\n"
+            f"Last Active: {user['last_interaction'].strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        )
+
+    # Get top 10 most used commands
+    conn = get_postgres_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+    SELECT command, SUM(count) as total
+    FROM command_usage
+    GROUP BY command
+    ORDER BY total DESC
+    LIMIT 10
+    ''')
+    top_commands = cursor.fetchall()
+    conn.close()
+
+    stats_message += "🔝 Top 10 Commands:\n"
+    for command, count in top_commands:
+        stats_message += f"{command}: {count} times\n"
+
+    # Send the message in chunks if it's too long
+    if len(stats_message) > 4096:
+        for i in range(0, len(stats_message), 4096):
+            await update.message.reply_text(stats_message[i:i+4096])
+    else:
+        await update.message.reply_text(stats_message)
 
 async def admin_ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("admin_ban_user")
@@ -153,8 +196,37 @@ async def admin_performance(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
     
     try:
-        # Force a save of current performance data
-        save_performance_data()
+        # Save performance data before retrieving metrics
+        await save_performance_data()
+        
+        metrics = get_performance_metrics()
+        
+        # Extract and format different parts of the metrics
+        parts = metrics.split('\n\n')
+        response_time = parts[0]
+        model_usage = parts[1]
+        command_usage = parts[2]
+        errors = parts[3]
+
+        # Format the message
+        performance_message = (
+            f"🚀 Performance Metrics:\n\n"
+            f"{response_time}\n\n"
+            f"📊 Model Usage:\n{model_usage}\n\n"
+            f"🔍 Command Usage:\n{command_usage}\n\n"
+            f"❗ Errors:\n{errors}"
+        )
+
+        # Send the message in chunks if it's too long
+        if len(performance_message) > 4096:
+            for i in range(0, len(performance_message), 4096):
+                await update.message.reply_text(performance_message[i:i+4096])
+        else:
+            await update.message.reply_text(performance_message)
+
+    except Exception as e:
+        logger.error(f"Error retrieving performance metrics: {str(e)}")
+        await update.message.reply_text(f"An error occurred while retrieving performance metrics: {str(e)}")
         
         metrics = get_performance_metrics()
         if not metrics.strip():

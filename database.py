@@ -170,3 +170,52 @@ def save_partial_response(user_id: int, message_id: str, partial_response: str):
 def get_partial_response(user_id: int, message_id: str) -> str:
     key = f"user:{user_id}:partial_response:{message_id}"
     return redis_client.get(key) or ""
+
+def get_active_users(days: int = 7) -> List[Dict[str, any]]:
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM get_active_users(%s)", (days,))
+                active_users = [
+                    {
+                        "id": row[0],
+                        "first_interaction": row[1],
+                        "last_interaction": row[2],
+                        "total_messages": row[3],
+                        "total_claude_messages": row[4],
+                        "total_gpt_messages": row[5]
+                    }
+                    for row in cur.fetchall()
+                ]
+        logger.info(f"Retrieved {len(active_users)} active users in the last {days} days")
+        return active_users
+    except Exception as e:
+        logger.error(f"Error retrieving active users: {e}")
+        return []
+    
+def get_user_stats() -> Dict[str, int]:
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                SELECT 
+                    COUNT(DISTINCT id) as total_users,
+                    SUM(total_messages) as total_messages,
+                    SUM(total_claude_messages) as total_claude_messages,
+                    SUM(total_gpt_messages) as total_gpt_messages,
+                    COUNT(DISTINCT CASE WHEN last_interaction > NOW() - INTERVAL '24 hours' THEN id END) as active_users_24h
+                FROM users
+                """)
+                result = cur.fetchone()
+                stats = {
+                    "total_users": result[0],
+                    "total_messages": result[1],
+                    "total_claude_messages": result[2],
+                    "total_gpt_messages": result[3],
+                    "active_users_24h": result[4]
+                }
+        logger.info("Retrieved user stats")
+        return stats
+    except Exception as e:
+        logger.error(f"Error retrieving user stats: {e}")
+        return {}

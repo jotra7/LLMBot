@@ -75,87 +75,101 @@ async def save_performance_data(context: ContextTypes.DEFAULT_TYPE = None):
     conn = get_postgres_connection()
     cursor = conn.cursor()
 
-    # Save response times
-    if performance_data['response_times']:
-        avg_duration = statistics.mean(performance_data['response_times'])
-        min_duration = min(performance_data['response_times'])
-        max_duration = max(performance_data['response_times'])
-        cursor.execute('INSERT INTO response_times (avg_duration, min_duration, max_duration) VALUES (%s, %s, %s)',
-                       (avg_duration, min_duration, max_duration))
-        logger.info(f"Saved response times: avg={avg_duration}, min={min_duration}, max={max_duration}")
-        performance_data['response_times'].clear()
+    try:
+        # Save response times
+        if performance_data['response_times']:
+            avg_duration = statistics.mean(performance_data['response_times'])
+            min_duration = min(performance_data['response_times'])
+            max_duration = max(performance_data['response_times'])
+            cursor.execute('INSERT INTO response_times (avg_duration, min_duration, max_duration) VALUES (%s, %s, %s)',
+                           (avg_duration, min_duration, max_duration))
+            logger.info(f"Saved response times: avg={avg_duration}, min={min_duration}, max={max_duration}")
+            performance_data['response_times'].clear()
 
-    # Save model usage
-    for model, count in performance_data['model_usage'].items():
-        cursor.execute('''
-        INSERT INTO model_usage (model, count) 
-        VALUES (%s, %s) 
-        ON CONFLICT (model) 
-        DO UPDATE SET count = model_usage.count + %s
-        ''', (model, count, count))
-        logger.info(f"Saved model usage: {model} = {count}")
-    performance_data['model_usage'].clear()
+        # Save model usage
+        for model, count in performance_data['model_usage'].items():
+            cursor.execute('''
+            INSERT INTO model_usage (model, count) 
+            VALUES (%s, %s) 
+            ON CONFLICT (model) 
+            DO UPDATE SET count = model_usage.count + %s
+            ''', (model, count, count))
+            logger.info(f"Saved model usage: {model} = {count}")
+        performance_data['model_usage'].clear()
 
-    # Save command usage
-    for command, count in performance_data['command_usage'].items():
-        cursor.execute('''
-        INSERT INTO command_usage (command, count) 
-        VALUES (%s, %s) 
-        ON CONFLICT (command) 
-        DO UPDATE SET count = command_usage.count + %s
-        ''', (command, count, count))
-        logger.info(f"Saved command usage: {command} = {count}")
-    performance_data['command_usage'].clear()
+        # Save command usage
+        for command, count in performance_data['command_usage'].items():
+            cursor.execute('''
+            INSERT INTO command_usage (command, count) 
+            VALUES (%s, %s) 
+            ON CONFLICT (command) 
+            DO UPDATE SET count = command_usage.count + %s
+            ''', (command, count, count))
+            logger.info(f"Saved command usage: {command} = {count}")
+        performance_data['command_usage'].clear()
 
-    # Save errors
-    for error_type, count in performance_data['errors'].items():
-        cursor.execute('''
-        INSERT INTO errors (error_type, count) 
-        VALUES (%s, %s) 
-        ON CONFLICT (error_type) 
-        DO UPDATE SET count = errors.count + %s
-        ''', (error_type, count, count))
-        logger.info(f"Saved error count: {error_type} = {count}")
-    performance_data['errors'].clear()
+        # Save errors
+        for error_type, count in performance_data['errors'].items():
+            cursor.execute('''
+            INSERT INTO errors (error_type, count) 
+            VALUES (%s, %s) 
+            ON CONFLICT (error_type) 
+            DO UPDATE SET count = errors.count + %s
+            ''', (error_type, count, count))
+            logger.info(f"Saved error count: {error_type} = {count}")
+        performance_data['errors'].clear()
 
-    conn.commit()
-    conn.close()
-    logger.info("Performance data saved to database")
+        conn.commit()
+        logger.info("Performance data saved to database")
+    except Exception as e:
+        logger.error(f"Error saving performance data: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
 
 def get_performance_metrics():
     conn = get_postgres_connection()
     cursor = conn.cursor()
 
-    cursor.execute('SELECT AVG(avg_duration) FROM response_times')
-    avg_response_time = cursor.fetchone()[0] or 0
+    # Get average, min, and max response times
+    cursor.execute('SELECT AVG(avg_duration), MIN(min_duration), MAX(max_duration) FROM response_times')
+    avg_response_time, min_response_time, max_response_time = cursor.fetchone()
 
-    cursor.execute('SELECT model, SUM(count) FROM model_usage GROUP BY model')
+    # Get model usage
+    cursor.execute('SELECT model, SUM(count) FROM model_usage GROUP BY model ORDER BY SUM(count) DESC')
     model_usage = dict(cursor.fetchall())
 
-    cursor.execute('SELECT command, SUM(count) FROM command_usage GROUP BY command')
+    # Get command usage
+    cursor.execute('SELECT command, SUM(count) FROM command_usage GROUP BY command ORDER BY SUM(count) DESC')
     command_usage = dict(cursor.fetchall())
 
-    cursor.execute('SELECT error_type, SUM(count) FROM errors GROUP BY error_type')
+    # Get error counts
+    cursor.execute('SELECT error_type, SUM(count) FROM errors GROUP BY error_type ORDER BY SUM(count) DESC')
     errors = dict(cursor.fetchall())
 
     conn.close()
 
-    metrics = f"Average response time: {avg_response_time:.2f} seconds\n\n"
+    metrics = f"Response times:\n"
+    metrics += f"  Average: {avg_response_time:.2f} seconds\n"
+    metrics += f"  Minimum: {min_response_time:.2f} seconds\n"
+    metrics += f"  Maximum: {max_response_time:.2f} seconds\n\n"
     
     metrics += "Model usage:\n"
     for model, count in model_usage.items():
-        metrics += f"{model}: {count} times\n"
+        metrics += f"  {model}: {count} times\n"
     
     metrics += "\nCommand usage:\n"
     for command, count in command_usage.items():
-        metrics += f"{command}: {count} times\n"
+        metrics += f"  {command}: {count} times\n"
     
     metrics += "\nErrors:\n"
     for error_type, count in errors.items():
-        metrics += f"{error_type}: {count} times\n"
+        metrics += f"  {error_type}: {count} times\n"
     
-    logger.info(f"Retrieved performance metrics: {metrics}")
+    logger.info(f"Retrieved performance metrics")
     return metrics
+
 
 # Make sure all necessary functions are exported
 __all__ = ['init_performance_db', 'record_response_time', 'record_model_usage', 
