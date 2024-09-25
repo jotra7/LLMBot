@@ -17,16 +17,26 @@ MAX_WAIT_TIME = 120  # Maximum wait time in seconds
 
 async def suno_api_request(endpoint, data=None, method='POST'):
     async with aiohttp.ClientSession() as session:
-        url = f"{SUNO_API_BASE_URL}/{endpoint}"
+        url = f"https://suno-api-cyan-five.vercel.app/api/{endpoint}"
         headers = {
+            "accept": "application/json",
             "Content-Type": "application/json"
         }
-        if method == 'POST':
-            async with session.post(url, json=data, headers=headers) as response:
-                return await response.json()
-        elif method == 'GET':
-            async with session.get(url, params=data, headers=headers) as response:
-                return await response.json()
+        try:
+            if method == 'POST':
+                async with session.post(url, json=data, headers=headers) as response:
+                    response.raise_for_status()
+                    return await response.json()
+            elif method == 'GET':
+                async with session.get(url, headers=headers) as response:
+                    response.raise_for_status()
+                    return await response.json()
+        except aiohttp.ClientResponseError as e:
+            logger.error(f"API request failed: {e.status} {e.message}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error in API request: {str(e)}")
+            raise
 
 async def wait_for_generation(generation_id):
     start_time = time.time()
@@ -65,29 +75,56 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     start_time = time.time()
     try:
         data = {
-            "prompt": prompt
+            "prompt": prompt,
+            "make_instrumental": False,
+            "model": "chirp-v3-5|chirp-v3-0",
+            "wait_audio": False
         }
-        result = await suno_api_request("generate", data)
+        initial_result = await suno_api_request("generate", data)
 
-        if result and isinstance(result, list) and len(result) > 0:
-            generation_id = result[0]['id']
-            await progress_message.edit_text("🎵 Music generation in progress. This may take up to 2 minutes...")
+        if not initial_result or not isinstance(initial_result, list) or len(initial_result) == 0:
+            raise ValueError(f"Unexpected response format from Suno API: {initial_result}")
+
+        generation_id = initial_result[0].get('id')
+        if not generation_id:
+            raise ValueError(f"No generation ID in the response: {initial_result}")
+
+        await progress_message.edit_text("🎵 Music generation in progress. This may take up to 2 minutes...")
+        
+        # Periodically check for generation status
+        check_interval = 10  # seconds
+        max_checks = MAX_WAIT_TIME // check_interval
+        for _ in range(max_checks):
+            await asyncio.sleep(check_interval)
             
-            final_result = await wait_for_generation(generation_id)
+            status_result = await suno_api_request(f"get?id={generation_id}", method='GET')
             
-            if final_result and 'audio_url' in final_result and final_result['audio_url']:
-                await update.message.reply_audio(audio=final_result['audio_url'], caption=f"Generated music for: {prompt}")
+            if not status_result or not isinstance(status_result, list) or len(status_result) == 0:
+                logger.warning(f"Unexpected status response: {status_result}")
+                continue
+
+            status = status_result[0].get('status')
+            if status == 'complete':
+                audio_url = status_result[0].get('audio_url')
+                if not audio_url:
+                    raise ValueError(f"No audio URL in complete status: {status_result}")
+                
+                await update.message.reply_audio(audio=audio_url, caption=f"Generated music for: {prompt}")
                 await progress_message.delete()
                 
                 try:
                     save_user_generation(user_id, prompt, generation_id)
                 except Exception as e:
                     logger.error(f"Error saving user generation: {e}")
+
+                break
+            elif status == 'failed':
+                raise ValueError(f"Generation failed: {status_result[0].get('error', 'Unknown error')}")
             else:
-                await progress_message.edit_text("Sorry, music generation timed out or failed. Please try again later.")
+                await progress_message.edit_text(f"🎵 Music generation in progress. Status: {status}")
+
         else:
-            logger.error(f"Unexpected response from Suno API: {result}")
-            await progress_message.edit_text("Sorry, I couldn't initiate music generation. Please try again.")
+            raise TimeoutError("Music generation timed out")
 
         end_time = time.time()
         response_time = end_time - start_time
@@ -133,29 +170,56 @@ async def custom_generate_music(update: Update, context: ContextTypes.DEFAULT_TY
             "title": title,
             "lyrics": lyrics,
             "prompt": prompt,
-            "music_style": music_style
+            "music_style": music_style,
+            "make_instrumental": False,
+            "model": "chirp-v3-5|chirp-v3-0",
+            "wait_audio": False
         }
-        result = await suno_api_request("custom_generate", data)
+        initial_result = await suno_api_request("custom_generate", data)
 
-        if result and isinstance(result, list) and len(result) > 0:
-            generation_id = result[0]['id']
-            await progress_message.edit_text("🎵 Custom music generation in progress. This may take up to 2 minutes...")
+        if not initial_result or not isinstance(initial_result, list) or len(initial_result) == 0:
+            raise ValueError(f"Unexpected response format from Suno API: {initial_result}")
+
+        generation_id = initial_result[0].get('id')
+        if not generation_id:
+            raise ValueError(f"No generation ID in the response: {initial_result}")
+
+        await progress_message.edit_text("🎵 Custom music generation in progress. This may take up to 2 minutes...")
+        
+        # Periodically check for generation status
+        check_interval = 10  # seconds
+        max_checks = MAX_WAIT_TIME // check_interval
+        for _ in range(max_checks):
+            await asyncio.sleep(check_interval)
             
-            final_result = await wait_for_generation(generation_id)
+            status_result = await suno_api_request(f"get?id={generation_id}", method='GET')
             
-            if final_result and 'audio_url' in final_result and final_result['audio_url']:
-                await update.message.reply_audio(audio=final_result['audio_url'], caption=f"Generated custom music: {title}")
+            if not status_result or not isinstance(status_result, list) or len(status_result) == 0:
+                logger.warning(f"Unexpected status response: {status_result}")
+                continue
+
+            status = status_result[0].get('status')
+            if status == 'complete':
+                audio_url = status_result[0].get('audio_url')
+                if not audio_url:
+                    raise ValueError(f"No audio URL in complete status: {status_result}")
+                
+                await update.message.reply_audio(audio=audio_url, caption=f"Generated custom music: {title}")
                 await progress_message.delete()
                 
                 try:
                     save_user_generation(user_id, prompt, generation_id)
                 except Exception as e:
                     logger.error(f"Error saving user generation: {e}")
+
+                break
+            elif status == 'failed':
+                raise ValueError(f"Generation failed: {status_result[0].get('error', 'Unknown error')}")
             else:
-                await progress_message.edit_text("Sorry, custom music generation timed out or failed. Please try again later.")
+                await progress_message.edit_text(f"🎵 Custom music generation in progress. Status: {status}")
+
         else:
-            logger.error(f"Unexpected response from Suno API: {result}")
-            await progress_message.edit_text("Sorry, I couldn't initiate custom music generation. Please try again.")
+            raise TimeoutError("Custom music generation timed out")
 
         end_time = time.time()
         response_time = end_time - start_time
@@ -166,7 +230,7 @@ async def custom_generate_music(update: Update, context: ContextTypes.DEFAULT_TY
         logger.error(f"Suno custom music generation error for user {user_id}: {str(e)}")
         await progress_message.edit_text(f"An error occurred while generating the custom music: {str(e)}")
         record_error("suno_custom_music_generation_error")
-
+        
 async def get_music_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("suno_get_music_info")
     if not context.args:
