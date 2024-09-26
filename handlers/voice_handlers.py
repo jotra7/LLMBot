@@ -86,14 +86,21 @@ async def set_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def voice_button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    
+
+    # Add logging to track the callback data
+    logger.info(f"Received callback query: {query.data}")
+
     if query.data.startswith("voice_"):
         truncated_id = query.data.split("_")[1]
         voices = await get_voices()
-        
+
+        # Log available voices and truncated_id for debugging
+        logger.info(f"Available voices: {voices.keys()}")
+        logger.info(f"Looking for voice ID starting with: {truncated_id}")
+
         # Find the full voice_id that starts with the truncated_id
         voice_id = next((vid for vid in voices.keys() if vid.startswith(truncated_id)), None)
-        
+
         if voice_id:
             context.user_data['voice_id'] = voice_id
             voice_name = voices.get(voice_id, "Unknown")
@@ -102,6 +109,9 @@ async def voice_button_callback(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             logger.error(f"Voice ID not found for truncated ID: {truncated_id}")
             await query.edit_message_text("Error setting voice. Please try again.")
+    else:
+        logger.error(f"Unexpected callback query data: {query.data}")
+        await query.edit_message_text("I'm not sure how to handle that request. Please try again.")
 
 async def current_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("current_voice")
