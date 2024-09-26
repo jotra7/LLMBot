@@ -155,7 +155,7 @@ async def admin_view_logs(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     
     try:
-        with open('bot.log', 'r') as log_file:
+        with open('./logs/bot.log', 'r') as log_file:
             logs = log_file.read()[-4000:]  # Get last 4000 characters
         await update.message.reply_text(f"Recent logs:\n\n{logs}")
     except Exception as e:

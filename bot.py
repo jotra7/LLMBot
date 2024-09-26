@@ -79,7 +79,7 @@ def create_application():
     gpt_handlers.setup_gpt_handlers(application)
     # Add Suno handlers
     suno_handlers.setup_suno_handlers(application)  # Add this line
-
+    suno_handlers.setup_custom_music_handler(application)  
 
     # Add message handler
     application.add_handler(MessageHandler(
@@ -97,7 +97,6 @@ def create_application():
     application.add_handler(CallbackQueryHandler(leonardo_handlers.leonardo_model_callback, pattern="^leo_model:"))
     application.add_handler(CallbackQueryHandler(model_handlers.button_callback))  # This should be the last one
     application.add_handler(CommandHandler("bug", user_handlers.bug_command))  # Correct way to add bug_command
-
     return application
 
 async def initialize_bot():
