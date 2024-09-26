@@ -9,12 +9,13 @@ from queue_system import queue_task
 from database import save_user_generation, get_user_generations_today
 import aiohttp
 import os
+import aiofiles
 
 logger = logging.getLogger(__name__)
 
 SUNO_API_BASE_URL = ""
-MAX_GENERATIONS_PER_DAY = 3
-MAX_WAIT_TIME = 120  # Maximum wait time in seconds
+MAX_GENERATIONS_PER_DAY = 30
+MAX_WAIT_TIME = 180 # Maximum wait time in seconds
 
 async def suno_api_request(endpoint, data=None, method='POST'):
     async with aiohttp.ClientSession() as session:
@@ -32,14 +33,14 @@ async def suno_api_request(endpoint, data=None, method='POST'):
                     logger.info(f"Response: {json_response}")
                     return json_response
             elif method == 'GET':
-                async with session.get(url, headers=headers) as response:
-                    logger.info(f"GET request to {url}")
+                async with session.get(url, params=data, headers=headers) as response:
+                    logger.info(f"GET request to {url} with params: {data}")
                     response.raise_for_status()
                     json_response = await response.json()
                     logger.info(f"Response: {json_response}")
                     return json_response
         except aiohttp.ClientResponseError as e:
-            logger.error(f"API request failed: {e.status} {e.message}")
+            logger.error(f"API request failed: {e.status} {str(e)}")
             raise
         except Exception as e:
             logger.error(f"Unexpected error in API request: {str(e)}")
@@ -55,21 +56,38 @@ async def download_mp3(audio_url, file_name):
             else:
                 logger.error(f"Failed to download MP3 from {audio_url}, status code: {response.status}")
 
-async def wait_for_generation(generation_id, chat_id, context):
+async def wait_for_generation(generation_ids, chat_id, context):
     start_time = time.time()
     await context.bot.send_message(
         chat_id=chat_id,
         text="🎵 Music generation started. Please wait while your music is being created..."
     )
     
-    while time.time() - start_time < MAX_WAIT_TIME:
-        result = await suno_api_request(f"get?id={generation_id}", method='GET')
-        if result and isinstance(result, list) and len(result) > 0:
-            if result[0]['status'] == 'complete':
-                return result[0]
+    pending_ids = set(generation_ids)
+    completed_generations = []
+
+    while time.time() - start_time < MAX_WAIT_TIME and pending_ids:
+        data = {"ids": ','.join(pending_ids)}
+        result = await suno_api_request("get", data=data, method='GET')
+
+        if result and isinstance(result, list):
+            for song_data in result:
+                gen_id = song_data['id']
+                status = song_data['status']
+                if status == 'complete' or status == 'streaming':
+                    if gen_id in pending_ids:
+                        completed_generations.append(song_data)
+                        pending_ids.remove(gen_id)
+                elif status == 'failed':
+                    logger.error(f"Generation {gen_id} failed.")
+                    pending_ids.remove(gen_id)
+        else:
+            logger.error(f"Unexpected response format: {result}")
+            break  # Exit loop if response is invalid
+
         await asyncio.sleep(10)  # Wait for 10 seconds before checking again
-    
-    return None
+
+    return completed_generations
 
 async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -99,34 +117,52 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = await suno_api_request('generate', data=data)
 
         if response and isinstance(response, list) and len(response) > 0:
-            generation_id = response[0]['id']
+            generation_ids = [song_data['id'] for song_data in response]
             prompt = data['prompt']
-            logger.info(f"Generation ID for user {user_id}: {generation_id}")
+            logger.info(f"Generation IDs for user {user_id}: {', '.join(generation_ids)}")
             
-            # Wait for the generation to complete with progress updates
-            completed_generation = await wait_for_generation(generation_id, chat_id, context)
+            # Wait for the generations to complete
+            completed_generations = await wait_for_generation(generation_ids, chat_id, context)
             
-            if completed_generation and completed_generation.get('audio_url'):
-                audio_url = completed_generation['audio_url']
-                file_name = f"{generation_id}.mp3"
-                
-                # Download the MP3 file
-                await download_mp3(audio_url, file_name)
-                
-                # Send the MP3 file to the user
-                with open(file_name, 'rb') as audio_file:
-                    await context.bot.send_audio(
-                        chat_id=chat_id,
-                        audio=audio_file,
-                        title="Generated Music",
-                        caption="Here is your generated music!"
-                    )
-                
-                # Clean up the file after sending
-                os.remove(file_name)
-                
-                # Save user generation with prompt and generation_id
-                save_user_generation(user_id, prompt, generation_id)
+            if completed_generations:
+                for completed_generation in completed_generations:
+                    if completed_generation.get('audio_url'):
+                        audio_url = completed_generation['audio_url']
+                        file_name = f"{completed_generation['id']}.mp3"
+                        
+                        # Download the MP3 file
+                        await download_mp3(audio_url, file_name)
+                        
+                        # Download artwork if available
+                        artwork_url = completed_generation.get('image_url')
+                        thumb_file = None
+                        if artwork_url:
+                            thumb_file_name = f"{completed_generation['id']}_artwork.jpg"
+                            await download_image(artwork_url, thumb_file_name)
+                            thumb_file = thumb_file_name
+                        
+                        # Send the MP3 file to the user
+                        with open(file_name, 'rb') as audio_file:
+                            await context.bot.send_audio(
+                                chat_id=chat_id,
+                                audio=audio_file,
+                                title=completed_generation.get('title', 'Generated Music'),
+                                caption=f"Here is your generated music!\n\nTitle: {completed_generation.get('title')}\nTags: {completed_generation.get('tags')}",
+                                thumbnail=thumb_file,
+                            )
+                        
+                        # Clean up the files after sending
+                        os.remove(file_name)
+                        if thumb_file:
+                            os.remove(thumb_file)
+                        
+                        # Save user generation with prompt and generation_id
+                        save_user_generation(user_id, prompt, completed_generation['id'])
+                    else:
+                        await context.bot.send_message(
+                            chat_id=chat_id,
+                            text="Music generation is still in progress. Please try again later."
+                        )
             else:
                 await context.bot.send_message(
                     chat_id=chat_id,
@@ -144,13 +180,31 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=chat_id,
             text="An error occurred while generating your music. Please try again later."
         )
+async def download_mp3(audio_url, file_name):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(audio_url) as response:
+            if response.status == 200:
+                async with aiofiles.open(file_name, 'wb') as f:
+                    await f.write(await response.read())
+                logger.info(f"MP3 file downloaded: {file_name}")
+            else:
+                logger.error(f"Failed to download MP3 from {audio_url}, status code: {response.status}")
 
+async def download_image(image_url, file_name):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(image_url) as response:
+            if response.status == 200:
+                async with aiofiles.open(file_name, 'wb') as f:
+                    await f.write(await response.read())
+                logger.info(f"Image file downloaded: {file_name}")
+            else:
+                logger.error(f"Failed to download image from {image_url}, status code: {response.status}")
 
 @queue_task('long_run')
 async def custom_generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("suno_custom_generate_music")
     user_id = update.effective_user.id
-    
+
     try:
         generations_today = get_user_generations_today(user_id)
         if generations_today >= MAX_GENERATIONS_PER_DAY:
@@ -170,7 +224,7 @@ async def custom_generate_music(update: Update, context: ContextTypes.DEFAULT_TY
     prompt = context.args[2]
     music_style = context.args[3]
 
-    logger.info(f"User {user_id} requested Suno custom music generation: '{title}'")
+    logger.info(f"User {user_id} requested Suno custom music generation.")
 
     progress_message = await update.message.reply_text("🎵 Initializing custom music generation...")
 
@@ -185,60 +239,65 @@ async def custom_generate_music(update: Update, context: ContextTypes.DEFAULT_TY
             "model": "chirp-v3-5|chirp-v3-0",
             "wait_audio": False
         }
-        initial_result = await suno_api_request("custom_generate", data)
+        response = await suno_api_request("custom_generate", data)
 
-        if not initial_result or not isinstance(initial_result, list) or len(initial_result) == 0:
-            raise ValueError(f"Unexpected response format from Suno API: {initial_result}")
+        if response and isinstance(response, list) and len(response) > 0:
+            generation_ids = [song_data['id'] for song_data in response]
+            logger.info(f"Generation IDs for user {user_id}: {', '.join(generation_ids)}")
 
-        generation_id = initial_result[0].get('id')
-        if not generation_id:
-            raise ValueError(f"No generation ID in the response: {initial_result}")
+            await progress_message.edit_text("🎵 Custom music generation in progress. This may take up to 2 minutes...")
 
-        await progress_message.edit_text("🎵 Custom music generation in progress. This may take up to 2 minutes...")
-        
-        # Periodically check for generation status
-        check_interval = 10  # seconds
-        max_checks = MAX_WAIT_TIME // check_interval
-        for _ in range(max_checks):
-            await asyncio.sleep(check_interval)
-            
-            status_result = await suno_api_request(f"get?id={generation_id}", method='GET')
-            
-            if not status_result or not isinstance(status_result, list) or len(status_result) == 0:
-                logger.warning(f"Unexpected status response: {status_result}")
-                continue
+            # Wait for the generations to complete
+            completed_generations = await wait_for_generation(generation_ids, update.effective_chat.id, context)
 
-            status = status_result[0].get('status')
-            if status == 'complete':
-                audio_url = status_result[0].get('audio_url')
-                if not audio_url:
-                    raise ValueError(f"No audio URL in complete status: {status_result}")
-                
-                await update.message.reply_audio(audio=audio_url, caption=f"Generated custom music: {title}")
-                await progress_message.delete()
-                
-                try:
-                    save_user_generation(user_id, prompt, generation_id)
-                except Exception as e:
-                    logger.error(f"Error saving user generation: {e}")
+            if completed_generations:
+                for completed_generation in completed_generations:
+                    if completed_generation.get('audio_url'):
+                        audio_url = completed_generation['audio_url']
+                        file_name = f"{completed_generation['id']}.mp3"
 
-                break
-            elif status == 'failed':
-                raise ValueError(f"Generation failed: {status_result[0].get('error', 'Unknown error')}")
+                        # Download the MP3 file
+                        await download_mp3(audio_url, file_name)
+
+                        # Download artwork if available
+                        artwork_url = completed_generation.get('image_url')
+                        thumb_file = None
+                        if artwork_url:
+                            thumb_file_name = f"{completed_generation['id']}_artwork.jpg"
+                            await download_image(artwork_url, thumb_file_name)
+                            thumb_file = thumb_file_name
+
+                        # Send the MP3 file to the user
+                        with open(file_name, 'rb') as audio_file:
+                            await context.bot.send_audio(
+                                chat_id=update.effective_chat.id,
+                                audio=audio_file,
+                                title=completed_generation.get('title', title),
+                                caption=f"Here is your custom generated music!\n\nTitle: {completed_generation.get('title')}",
+                                thumbnail=thumb_file,
+                            )
+
+                        # Clean up the files after sending
+                        os.remove(file_name)
+                        if thumb_file:
+                            os.remove(thumb_file_name)
+
+                        # Save user generation
+                        save_user_generation(user_id, prompt, completed_generation['id'])
             else:
-                await progress_message.edit_text(f"🎵 Custom music generation in progress. Status: {status}")
+                raise TimeoutError("Custom music generation timed out")
+
+            end_time = time.time()
+            response_time = end_time - start_time
+            record_response_time(response_time)
+            logger.info(f"Suno custom music generation process completed in {response_time:.2f} seconds")
 
         else:
-            raise TimeoutError("Custom music generation timed out")
-
-        end_time = time.time()
-        response_time = end_time - start_time
-        record_response_time(response_time)
-        logger.info(f"Suno custom music generation process completed in {response_time:.2f} seconds")
+            raise ValueError("Invalid response from Suno API")
 
     except Exception as e:
         logger.error(f"Suno custom music generation error for user {user_id}: {str(e)}")
-        await progress_message.edit_text(f"An error occurred while generating the custom music: {str(e)}")
+        await progress_message.edit_text(f"An error occurred while generating the custom music. Please try again later.")
         record_error("suno_custom_music_generation_error")
         
 async def get_music_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
