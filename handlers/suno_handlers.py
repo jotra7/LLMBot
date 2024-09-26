@@ -10,6 +10,8 @@ from database import save_user_generation, get_user_generations_today
 import aiohttp
 import os
 import aiofiles
+from utils import openai_client
+
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +91,21 @@ async def wait_for_generation(generation_ids, chat_id, context):
 
     return completed_generations
 
+async def generate_lyrics_summary(lyrics):
+    try:
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o-2024-08-06",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that summarizes song lyrics.  You do not provide all of  the lyrics, just a nice summary."},
+                {"role": "user", "content": f"Please provide a brief summary of these lyrics:\n\n{lyrics}"}
+            ],
+            max_tokens=100,
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        logger.error(f"Error generating lyrics summary: {e}")
+        return "Unable to generate lyrics summary."
+
 async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     user_name = update.message.from_user.username
@@ -128,7 +145,8 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for completed_generation in completed_generations:
                     if completed_generation.get('audio_url'):
                         audio_url = completed_generation['audio_url']
-                        file_name = f"{completed_generation['id']}.mp3"
+                        title = completed_generation.get('title', 'Untitled')
+                        file_name = f"{title}.mp3"
                         
                         # Download the MP3 file
                         await download_mp3(audio_url, file_name)
@@ -141,13 +159,28 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             await download_image(artwork_url, thumb_file_name)
                             thumb_file = thumb_file_name
                         
+                        # Prepare caption with available information
+                        caption = f"Here is your generated music!\n\nTitle: {title}\n"
+                        
+                        if 'tags' in completed_generation:
+                            caption += f"Tags: {completed_generation['tags']}\n"
+                        
+                        if 'gpt_description_prompt' in completed_generation:
+                            caption += f"\nDescription: {completed_generation['gpt_description_prompt']}\n"
+                        
+                        # Generate lyrics summary
+                        lyrics = completed_generation.get('lyric', '')
+                        if lyrics:
+                            lyrics_summary = await generate_lyrics_summary(lyrics)
+                            caption += f"\nLyrics Summary: {lyrics_summary}\n"
+                        
                         # Send the MP3 file to the user
                         with open(file_name, 'rb') as audio_file:
                             await context.bot.send_audio(
                                 chat_id=chat_id,
                                 audio=audio_file,
-                                title=completed_generation.get('title', 'Generated Music'),
-                                caption=f"Here is your generated music!\n\nTitle: {completed_generation.get('title')}\nTags: {completed_generation.get('tags')}",
+                                title=title,
+                                caption=caption,
                                 thumbnail=thumb_file,
                             )
                         
@@ -180,6 +213,7 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=chat_id,
             text="An error occurred while generating your music. Please try again later."
         )
+
 async def download_mp3(audio_url, file_name):
     async with aiohttp.ClientSession() as session:
         async with session.get(audio_url) as response:
@@ -254,7 +288,7 @@ async def custom_generate_music(update: Update, context: ContextTypes.DEFAULT_TY
                 for completed_generation in completed_generations:
                     if completed_generation.get('audio_url'):
                         audio_url = completed_generation['audio_url']
-                        file_name = f"{completed_generation['id']}.mp3"
+                        file_name = f"{completed_generation.get('title', 'Untitled')}.mp3"
 
                         # Download the MP3 file
                         await download_mp3(audio_url, file_name)
@@ -263,7 +297,7 @@ async def custom_generate_music(update: Update, context: ContextTypes.DEFAULT_TY
                         artwork_url = completed_generation.get('image_url')
                         thumb_file = None
                         if artwork_url:
-                            thumb_file_name = f"{completed_generation['id']}_artwork.jpg"
+                            thumb_file_name = f"{completed_generation['title', 'Untitled']}_artwork.jpg"
                             await download_image(artwork_url, thumb_file_name)
                             thumb_file = thumb_file_name
 
