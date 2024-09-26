@@ -43,3 +43,4 @@ LEONARDO_AI_KEY = os.getenv("LEONARDO_AI_KEY")
 LEONARDO_API_BASE_URL = "https://cloud.leonardo.ai/api/rest/v1"
 DEFAULT_LEONARDO_MODEL = "6bef9f1b-29cb-40c7-b9df-32b51c1f67d3"  # Leonardo Creative
 GENERATIONS_PER_DAY = os.getenv("GENERATIONS_PER_DAY")
+SUNO_BASE_URL = os.getenv("SUNO_BASE_URL")

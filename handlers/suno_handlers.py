@@ -3,7 +3,7 @@ import asyncio
 import time
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
-from config import ADMIN_USER_IDS, GENERATIONS_PER_DAY
+from config import ADMIN_USER_IDS, GENERATIONS_PER_DAY, SUNO_BASE_URL
 from performance_metrics import record_command_usage, record_response_time, record_error
 from queue_system import queue_task
 from database import save_user_generation, get_user_generations_today
@@ -15,12 +15,13 @@ from utils import openai_client
 
 logger = logging.getLogger(__name__)
 
-SUNO_API_BASE_URL = ""
+
 MAX_WAIT_TIME = 180 # Maximum wait time in seconds
 GENERATIONS_PER_DAY = int(GENERATIONS_PER_DAY)
+
 async def suno_api_request(endpoint, data=None, method='POST'):
     async with aiohttp.ClientSession() as session:
-        url = f"https://suno-api-cyan-five.vercel.app/api/{endpoint}"
+        url = f"{SUNO_BASE_URL}api/{endpoint}"
         headers = {
             "accept": "application/json",
             "Content-Type": "application/json"
