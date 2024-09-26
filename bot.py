@@ -30,15 +30,15 @@ def create_application():
     application.add_handler(CommandHandler("delete_session", user_handlers.delete_session_command))
 
     # Add handlers from model_handlers
-    application.add_handler(CommandHandler("listmodels", model_handlers.list_models))
-    application.add_handler(CommandHandler("setmodel", model_handlers.set_model))
-    application.add_handler(CommandHandler("currentmodel", model_handlers.current_model))
+    application.add_handler(CommandHandler("list_models", model_handlers.list_models))
+    application.add_handler(CommandHandler("set_model", model_handlers.set_model))
+    application.add_handler(CommandHandler("curren_tmodel", model_handlers.current_model))
 
     # Add handlers from voice_handlers
     application.add_handler(CommandHandler("tts", voice_handlers.tts_command))
-    application.add_handler(CommandHandler("listvoices", voice_handlers.list_voices))
-    application.add_handler(CommandHandler("setvoice", voice_handlers.set_voice))
-    application.add_handler(CommandHandler("currentvoice", voice_handlers.current_voice))
+    application.add_handler(CommandHandler("list_voices", voice_handlers.list_voices))
+    application.add_handler(CommandHandler("set_voice", voice_handlers.set_voice))
+    application.add_handler(CommandHandler("current_voice", voice_handlers.current_voice))
     application.add_handler(voice_handlers.voice_addition_handler)
     application.add_handler(CommandHandler("delete_custom_voice", voice_handlers.delete_custom_voice))
 
@@ -73,7 +73,6 @@ def create_application():
     application.add_handler(CommandHandler("set_leonardo_model", leonardo_handlers.set_leonardo_model))
     application.add_handler(CommandHandler("current_leonardo_model", leonardo_handlers.current_leonardo_model))
     application.add_handler(CommandHandler("leo", leonardo_handlers.leonardo_generate_image))
-    application.add_handler(CommandHandler("unzoom", leonardo_handlers.leonardo_unzoom))
 
     # Add GPT handlers
     gpt_handlers.setup_gpt_handlers(application)

@@ -159,15 +159,17 @@ def get_help_text(category):
                 
         'suno': (
             "🎵 Music Generation\n\n"
-            "Make your own song (Limited to 2 per day):\n"
+            "Make your own song (Limited to 5 per day):\n"
             "• /generate_music <prompt>  - create a song based on your prompt\n"
+            "• /custom_generate_music - Start a guided process to create a custom song with lyrics or instrumental music.\n"
+
         ),
         'ai_models': (
             "🧠 AI Models\n\n"
             "Choose the AI model that suits your needs:\n"
-            "• /listmodels - View available Claude AI models.\n"
-            "• /setmodel - Change the active Claude AI model.\n"
-            "• /currentmodel - Check the current Claude model in use.\n"
+            "• /list_models - View available Claude AI models.\n"
+            "• /set_model - Change the active Claude AI model.\n"
+            "• /current_model - Check the current Claude model in use.\n"
             "• /list_gpt_models - View available GPT models.\n"
             "• /set_gpt_model - Choose a GPT model to use.\n"
             "• /current_gpt_model - Check the current GPT model in use.\n\n"
@@ -186,9 +188,9 @@ def get_help_text(category):
             "🎙️ Text-to-Speech\n\n"
             "Convert text to spoken words:\n"
             "• /tts <text> - Generate speech from text.\n"
-            "• /listvoices - View available voice options.\n"
-            "• /setvoice - Choose a preferred voice.\n"
-            "• /currentvoice - Check the active voice setting.\n"
+            "• /list_voices - View available voice options.\n"
+            "• /set_voice - Choose a preferred voice.\n"
+            "• /current_voice - Check the active voice setting.\n"
             "• /generate_sound <description> - Create custom sound effects.\n"
             "• /add_voice - Add a custom voice (one per user).\n"
             "• /delete_custom_voice - Delete your custom voice.\n\n"
@@ -203,7 +205,6 @@ def get_help_text(category):
             "• /list_flux_models or /list_leonardo_models - View model options.\n"
             "• /set_flux_model or /set_leonardo_model - Select a specific model.\n"
             "• /current_flux_model or /current_leonardo_model - Check active models.\n"
-            "• /unzoom - Expand a Leonardo.ai generated image.\n\n"
             "Let your imagination run wild with AI-powered image creation!"
         ),
         'video_gen': (
