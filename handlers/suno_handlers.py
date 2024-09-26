@@ -106,6 +106,7 @@ async def generate_lyrics_summary(lyrics):
         logger.error(f"Error generating lyrics summary: {e}")
         return "Unable to generate lyrics summary."
 
+
 async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     user_name = update.message.from_user.username
@@ -138,68 +139,118 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prompt = data['prompt']
             logger.info(f"Generation IDs for user {user_id}: {', '.join(generation_ids)}")
             
-            # Wait for the generations to complete
-            completed_generations = await wait_for_generation(generation_ids, chat_id, context)
+            # Send initial message
+            initial_message = await context.bot.send_message(
+                chat_id=chat_id,
+                text="🎵 Music generation started. Fetching initial details..."
+            )
             
-            if completed_generations:
-                for completed_generation in completed_generations:
-                    if completed_generation.get('audio_url'):
+            # Wait for the initial generation details
+            initial_details = await wait_for_initial_details(generation_ids, chat_id, context, initial_message)
+            
+            if initial_details:
+                for details in initial_details:
+                    # Update message with initial details
+                    caption = f"Your music is being generated!\n\n"
+                    caption += f"Title: {details.get('title', 'Untitled')}\n"
+                    caption += f"Tags: {details.get('tags', 'N/A')}\n"
+                    if 'gpt_description_prompt' in details:
+                        caption += f"\nDescription: {details['gpt_description_prompt']}\n"
+                    
+                    await context.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=initial_message.message_id,
+                        text=caption + "\nGenerating lyrics summary..."
+                    )
+                    
+                    # Generate lyrics summary if lyrics are available
+                    if 'lyric' in details:
+                        lyrics_summary = await generate_lyrics_summary(details['lyric'])
+                        caption += f"\nLyrics Summary: {lyrics_summary}\n"
+                    
+                    caption += "\nPreparing audio...\n"
+                    await context.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=initial_message.message_id,
+                        text=caption
+                    )
+                    
+                    # Now wait for the audio to be ready
+                    completed_generation = await wait_for_audio(details['id'], chat_id, context, initial_message, caption)
+                    
+                    if completed_generation and completed_generation.get('audio_url'):
                         audio_url = completed_generation['audio_url']
                         title = completed_generation.get('title', 'Untitled')
                         file_name = f"{title}.mp3"
                         
                         # Download the MP3 file
-                        await download_mp3(audio_url, file_name)
+                        try:
+                            await download_mp3(audio_url, file_name)
+                        except Exception as e:
+                            logger.error(f"Error downloading MP3: {str(e)}")
+                            await context.bot.edit_message_text(
+                                chat_id=chat_id,
+                                message_id=initial_message.message_id,
+                                text=caption + "Sorry, there was an issue downloading your music. Please try again."
+                            )
+                            continue
                         
                         # Download artwork if available
                         artwork_url = completed_generation.get('image_url')
                         thumb_file = None
                         if artwork_url:
-                            thumb_file_name = f"{completed_generation['id']}_artwork.jpg"
-                            await download_image(artwork_url, thumb_file_name)
-                            thumb_file = thumb_file_name
-                        
-                        # Prepare caption with available information
-                        caption = f"Here is your generated music!\n\nTitle: {title}\n"
-                        
-                        if 'tags' in completed_generation:
-                            caption += f"Tags: {completed_generation['tags']}\n"
-                        
-                        if 'gpt_description_prompt' in completed_generation:
-                            caption += f"\nDescription: {completed_generation['gpt_description_prompt']}\n"
-                        
-                        # Generate lyrics summary
-                        lyrics = completed_generation.get('lyric', '')
-                        if lyrics:
-                            lyrics_summary = await generate_lyrics_summary(lyrics)
-                            caption += f"\nLyrics Summary: {lyrics_summary}\n"
+                            try:
+                                thumb_file_name = f"{completed_generation['id']}_artwork.jpg"
+                                await download_image(artwork_url, thumb_file_name)
+                                thumb_file = thumb_file_name
+                            except Exception as e:
+                                logger.error(f"Error downloading image: {str(e)}")
                         
                         # Send the MP3 file to the user
-                        with open(file_name, 'rb') as audio_file:
-                            await context.bot.send_audio(
+                        try:
+                            with open(file_name, 'rb') as audio_file:
+                                await context.bot.send_audio(
+                                    chat_id=chat_id,
+                                    audio=audio_file,
+                                    title=title,
+                                    caption="Here's your generated music!",
+                                    thumbnail=thumb_file,
+                                    reply_to_message_id=initial_message.message_id
+                                )
+                            await context.bot.edit_message_text(
                                 chat_id=chat_id,
-                                audio=audio_file,
-                                title=title,
-                                caption=caption,
-                                thumbnail=thumb_file,
+                                message_id=initial_message.message_id,
+                                text=caption + "Music generation complete! Enjoy your track above."
+                            )
+                        except Exception as e:
+                            logger.error(f"Error sending audio: {str(e)}")
+                            await context.bot.edit_message_text(
+                                chat_id=chat_id,
+                                message_id=initial_message.message_id,
+                                text=caption + "Sorry, there was an issue sending your music. Please try again."
                             )
                         
                         # Clean up the files after sending
-                        os.remove(file_name)
-                        if thumb_file:
-                            os.remove(thumb_file)
+                        try:
+                            os.remove(file_name)
+                            if thumb_file and os.path.exists(thumb_file):
+                                os.remove(thumb_file)
+                        except Exception as e:
+                            logger.error(f"Error cleaning up files: {str(e)}")
                         
                         # Save user generation with prompt and generation_id
                         save_user_generation(user_id, prompt, completed_generation['id'])
                     else:
-                        await context.bot.send_message(
+                        await context.bot.edit_message_text(
                             chat_id=chat_id,
-                            text="Music generation is still in progress. Please try again later."
+                            message_id=initial_message.message_id,
+                            text=caption + "Sorry, there was an issue generating your music. Please try again."
                         )
             else:
-                await context.bot.send_message(
+                await context.bot.edit_message_text(
                     chat_id=chat_id,
-                    text="Music generation is still in progress. Please try again later."
+                    message_id=initial_message.message_id,
+                    text="Sorry, there was an issue generating your music. Please try again."
                 )
         else:
             logger.error(f"Suno music generation failed for user {user_id}. Response: {response}")
@@ -213,6 +264,47 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=chat_id,
             text="An error occurred while generating your music. Please try again later."
         )
+
+async def wait_for_initial_details(generation_ids, chat_id, context, message):
+    start_time = time.time()
+    
+    while time.time() - start_time < MAX_WAIT_TIME:
+        data = {"ids": ','.join(generation_ids)}
+        result = await suno_api_request("get", data=data, method='GET')
+
+        if result and isinstance(result, list):
+            details = [song for song in result if song.get('title') and song.get('tags')]
+            if details:
+                return details
+
+        await asyncio.sleep(5)  # Wait for 5 seconds before checking again
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message.message_id,
+            text=f"🎵 Music generation started. Fetching initial details...\nElapsed time: {int(time.time() - start_time)}s"
+        )
+    
+    return None
+
+async def wait_for_audio(generation_id, chat_id, context, message, caption):
+    start_time = time.time()
+    while time.time() - start_time < MAX_WAIT_TIME:
+        data = {"ids": generation_id}
+        result = await suno_api_request("get", data=data, method='GET')
+
+        if result and isinstance(result, list) and len(result) > 0:
+            song_data = result[0]
+            if song_data.get('status') == 'complete' and song_data.get('audio_url'):
+                return song_data
+
+        await asyncio.sleep(5)  # Wait for 5 seconds before checking again
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message.message_id,
+            text=f"{caption}Audio generation in progress... (Elapsed time: {int(time.time() - start_time)}s)"
+        )
+    
+    return None
 
 async def download_mp3(audio_url, file_name):
     async with aiohttp.ClientSession() as session:
