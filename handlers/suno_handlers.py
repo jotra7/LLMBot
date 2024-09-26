@@ -3,7 +3,7 @@ import asyncio
 import time
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
-from config import ADMIN_USER_IDS, MAX_GENERATIONS_PER_DAY
+from config import ADMIN_USER_IDS, GENERATIONS_PER_DAY
 from performance_metrics import record_command_usage, record_response_time, record_error
 from queue_system import queue_task
 from database import save_user_generation, get_user_generations_today
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 SUNO_API_BASE_URL = ""
 MAX_WAIT_TIME = 180 # Maximum wait time in seconds
-
+GENERATIONS_PER_DAY = int(GENERATIONS_PER_DAY)
 async def suno_api_request(endpoint, data=None, method='POST'):
     async with aiohttp.ClientSession() as session:
         url = f"https://suno-api-cyan-five.vercel.app/api/{endpoint}"
@@ -115,10 +115,10 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_generations_today = get_user_generations_today(user_id)
     logger.info(f"User {user_id} has generated {user_generations_today} times today")
-    if user_generations_today >= MAX_GENERATIONS_PER_DAY:
+    if user_generations_today >= GENERATIONS_PER_DAY:
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"Sorry {user_name}, you have reached your daily limit of {MAX_GENERATIONS_PER_DAY} generations."
+            text=f"Sorry {user_name}, you have reached your daily limit of {GENERATIONS_PER_DAY} generations."
         )
         return
 
@@ -300,8 +300,8 @@ async def custom_generate_music(update: Update, context: ContextTypes.DEFAULT_TY
 
     try:
         generations_today = get_user_generations_today(user_id)
-        if generations_today >= MAX_GENERATIONS_PER_DAY:
-            await update.message.reply_text(f"You've reached your daily limit of {MAX_GENERATIONS_PER_DAY} generations. Please try again tomorrow.")
+        if generations_today >= GENERATIONS_PER_DAY:
+            await update.message.reply_text(f"You've reached your daily limit of {GENERATIONS_PER_DAY} generations. Please try again tomorrow.")
             return
     except Exception as e:
         logger.error(f"Error checking user generations: {e}")
