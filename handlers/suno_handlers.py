@@ -463,6 +463,7 @@ async def get_tags(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 @queue_task('long_run')
 async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    record_command_usage("suno_custom_song") 
     if update.message.text.lower() != 'yes':
         await update.message.reply_text("Generation cancelled. Please start over with /custom_generate_music")
         return ConversationHandler.END
