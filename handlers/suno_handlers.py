@@ -3,7 +3,7 @@ import asyncio
 import time
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
-from config import ADMIN_USER_IDS
+from config import ADMIN_USER_IDS, MAX_GENERATIONS_PER_DAY
 from performance_metrics import record_command_usage, record_response_time, record_error
 from queue_system import queue_task
 from database import save_user_generation, get_user_generations_today
@@ -16,7 +16,6 @@ from utils import openai_client
 logger = logging.getLogger(__name__)
 
 SUNO_API_BASE_URL = ""
-MAX_GENERATIONS_PER_DAY = 50
 MAX_WAIT_TIME = 180 # Maximum wait time in seconds
 
 async def suno_api_request(endpoint, data=None, method='POST'):
