@@ -63,9 +63,18 @@ def record_model_usage(model):
     performance_data['model_usage'][model] += 1
     logger.debug(f"Recorded model usage: {model}")
 
-def record_command_usage(command):
+def record_command_usage(command, user_id=None, username=None):
     performance_data['command_usage'][command] += 1
-    logger.debug(f"Recorded command usage: {command}")
+    
+    if user_id and username:
+        logger.debug(f"Recorded command usage: {command} by user {username} (ID: {user_id})")
+    elif user_id:
+        logger.debug(f"Recorded command usage: {command} by user with ID: {user_id} (username not available)")
+    elif username:
+        logger.debug(f"Recorded command usage: {command} by user {username} (ID not available)")
+    else:
+        logger.debug(f"Recorded command usage: {command} by anonymous user (ID and username not available)")
+
 
 def record_error(error_type):
     performance_data['errors'][error_type] += 1

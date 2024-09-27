@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 @queue_task('quick')
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_name = update.effective_user.username
     user_message = update.message.text
     user_id = update.effective_user.id
     model = context.user_data.get('model', DEFAULT_MODEL)
@@ -25,7 +26,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
         user_message = user_message.replace(f"@{bot_username}", "").strip()
 
-    logger.info(f"User {user_id} sent message: '{user_message[:50]}...'")
+    logger.info(f"User {user_name}({user_id}) sent message: '{user_message[:50]}...'")
     start_time = time.time()
 
     try:
@@ -63,7 +64,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         record_model_usage(model)
 
     except Exception as e:
-        logger.error(f"Error processing message for user {user_id}: {str(e)}")
+        logger.error(f"Error processing message for user {user_name} ({user_id}): {str(e)}")
         await update.message.reply_text(f"An error occurred: {str(e)}")
         record_error("message_processing_error")
 

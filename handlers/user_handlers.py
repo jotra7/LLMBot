@@ -399,7 +399,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Check if we're in the middle of a bug report
     if context.user_data.get('expecting_bug_report'):
         return await receive_bug_report(update, context)
-    
+    user_name = update.effective_user.username      
     user_message = update.message.text
     user_id = update.effective_user.id
     model = context.user_data.get('model', DEFAULT_MODEL)
