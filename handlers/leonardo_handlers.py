@@ -68,14 +68,30 @@ async def set_leonardo_model(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def leonardo_model_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    
-    model_id = query.data.split(':')[1]
-    model_name = leonardo_model_cache.get(model_id, "Unknown")
-    
-    context.user_data['leonardo_model'] = model_id
-    await query.edit_message_text(f"Leonardo.ai model set to {model_name} (ID: {model_id})")
-    logger.info(f"User {update.effective_user.id} set Leonardo model to {model_name} (ID: {model_id})")
-    
+
+    try:
+        # Extract model ID from the callback data
+        logger.debug(f"Callback query data: {query.data}")
+        model_id = query.data.split(':')[1]
+        model_name = leonardo_model_cache.get(model_id, None)
+
+        if not model_name:
+            logger.error(f"Model ID {model_id} not found in cache.")
+            await query.edit_message_text("Selected model is no longer available. Please try again.")
+            return
+
+        # Set the model in the user's context data
+        context.user_data['leonardo_model'] = model_id
+        await query.edit_message_text(f"Leonardo.ai model set to {model_name} (ID: {model_id})")
+        logger.info(f"User {update.effective_user.id} set Leonardo model to {model_name} (ID: {model_id})")
+
+    except IndexError as e:
+        logger.error(f"Error parsing model selection: {str(e)}")
+        await query.edit_message_text("An error occurred while selecting the model. Please try again.")
+    except Exception as e:
+        logger.error(f"Unexpected error during model selection: {str(e)}")
+        await query.edit_message_text("I'm not sure how to handle that request. Please try again later.")
+   
 
 async def current_leonardo_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("current_leonardo_model")
@@ -114,17 +130,6 @@ async def improve_leonardo_prompt(prompt: str) -> str:
         logger.error(f"Error decoding JSON response from prompt improvement API. Response text: {response.text}")
         return prompt
 
-import asyncio
-import requests
-import json
-from telegram import Update
-from telegram.ext import ContextTypes
-from config import LEONARDO_AI_KEY, LEONARDO_API_BASE_URL, DEFAULT_LEONARDO_MODEL
-from performance_metrics import record_command_usage, record_error
-from queue_system import queue_task
-import logging
-
-logger = logging.getLogger(__name__)
 
 def truncate_text(text: str, max_length: int = 15) -> str:
     """Truncate text to a specified length and add ellipsis if necessary."""

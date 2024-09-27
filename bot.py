@@ -96,7 +96,7 @@ def create_application():
     application.add_handler(CallbackQueryHandler(leonardo_handlers.leonardo_model_callback, pattern="^leo_model:"))
     application.add_handler(CallbackQueryHandler(model_handlers.button_callback))  # This should be the last one
     application.add_handler(CommandHandler("bug", user_handlers.bug_command))  # Correct way to add bug_command
-    
+
     
     return application
 
