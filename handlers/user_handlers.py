@@ -413,7 +413,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
         user_message = user_message.replace(f"@{bot_username}", "").strip()
 
-    logger.info(f"User {user_id} sent message: '{user_message[:50]}...'")
+    logger.info(f"User {user_name}({user_id}) sent message: '{user_message[:50]}...'")
     start_time = time.time()
 
     try:

@@ -53,7 +53,8 @@ def queue_task(task_type='quick'):
     def decorator(func):
         async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
             user_id = update.effective_user.id
-            logger.info(f"Queueing {task_type} task for user {user_id}")
+            user_name = update.effective_user.username    
+            logger.info(f"Queueing {task_type} task for user {user_name}({user_id})")
             
             async def task_wrapper():
                 try:
