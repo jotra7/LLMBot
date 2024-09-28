@@ -3,8 +3,8 @@ import asyncio
 import time
 import functools
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
-from config import FLUX_MODELS, DEFAULT_FLUX_MODEL, MAX_FLUX_GENERATIONS_PER_DAY
+from telegram.ext import ContextTypes, CommandHandler
+from config import FLUX_MODELS, DEFAULT_FLUX_MODEL, MAX_FLUX_GENERATIONS_PER_DAY, MAX_BRR_PER_DAY
 from performance_metrics import record_command_usage, record_response_time, record_error
 from queue_system import queue_task
 from database import get_user_generations_today, save_user_generation
@@ -139,3 +139,95 @@ async def flux_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         record_error("flux_image_generation_error")
     finally:
         logger.info(f"Flux command execution completed for user {user_id}")
+
+@queue_task('long_run')
+async def remove_background(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("remove_background")
+    user_id = update.effective_user.id
+    user_name = update.effective_user.username
+
+    # Check user's daily limit
+    user_generations_today = get_user_generations_today(user_id, "rbb")
+    logger.info(f"User {user_id} has removed {user_generations_today} backgrounds today")
+    if user_generations_today >= MAX_BRR_PER_DAY:
+        await update.message.reply_text(f"Sorry {user_name}, you have reached your daily limit of {MAX_FLUX_GENERATIONS_PER_DAY} Flux generations.")
+        return
+
+    if not update.message.reply_to_message or not update.message.reply_to_message.photo:
+        await update.message.reply_text("Please reply to an image with the /remove_bg command.")
+        return
+
+    logger.info(f"User {user_id} requested background removal")
+
+    progress_message = await update.message.reply_text("🖼️ Processing image for background removal...")
+
+    start_time = time.time()
+    try:
+        photo = update.message.reply_to_message.photo[-1]
+        file = await context.bot.get_file(photo.file_id)
+        file_url = file.file_path
+
+        async def update_progress():
+            steps = [
+                "Analyzing image", "Identifying foreground", "Removing background",
+                "Refining edges", "Finalizing image"
+            ]
+            step_index = 0
+            dots = 0
+            while True:
+                step = steps[step_index % len(steps)]
+                await progress_message.edit_text(f"🖼️ {step}{'.' * dots}")
+                dots = (dots + 1) % 4
+                step_index += 1
+                await asyncio.sleep(2)
+
+        progress_task = asyncio.create_task(update_progress())
+
+        try:
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(None, functools.partial(
+                fal_client.run,
+                "fal-ai/birefnet",
+                arguments={
+                    "image_url": file_url
+                }
+            ))
+            logger.info(f"API response from fal.ai: {result}")
+
+            # Check for the 'image' key instead of 'no_background_image'
+            if result and 'image' in result and 'url' in result['image']:
+                image_url = result['image']['url']
+                await update.message.reply_photo(photo=image_url, caption="Here's your image with the background removed!")
+                await progress_message.delete()
+
+                # Save user generation
+                save_user_generation(user_id, "remove_bg", "rbb")
+
+                user_generations_today = get_user_generations_today(user_id, "rbb")
+                remaining_generations = max(0, MAX_BRR_PER_DAY - user_generations_today)
+                await update.message.reply_text(f"You have {remaining_generations} bhackground removals left for today.")
+
+                logger.info(f"Background removed successfully for user {user_id}")
+            else:
+                raise ValueError("Unexpected response format from fal.ai API")
+
+        finally:
+            progress_task.cancel()
+
+    except Exception as e:
+        logger.error(f"Background removal error for user {user_id}: {str(e)}")
+        await progress_message.edit_text(f"An error occurred during background removal: {str(e)}")
+        record_error("background_removal_error")
+
+    finally:
+        end_time = time.time()
+        response_time = end_time - start_time
+        record_response_time(response_time)
+        logger.info(f"Background removal completed in {response_time:.2f} seconds")
+
+def setup_flux_handlers(application):
+    application.add_handler(CommandHandler("list_flux_models", list_flux_models))
+    application.add_handler(CommandHandler("set_flux_model", set_flux_model))
+    application.add_handler(CommandHandler("current_flux_model", current_flux_model))
+    application.add_handler(CommandHandler("flux", flux_command))
+    application.add_handler(CommandHandler("remove_bg", remove_background))

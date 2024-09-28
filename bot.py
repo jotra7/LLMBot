@@ -13,6 +13,7 @@ from handlers import (
     gpt_handlers,
     suno_handlers
 )
+
 from model_cache import periodic_cache_update
 from voice_cache import periodic_voice_cache_update
 from performance_metrics import save_performance_data
@@ -63,11 +64,7 @@ def create_application():
     application.add_handler(CommandHandler("admin_performance", admin_handlers.admin_performance))
 
     # Add handlers from flux_handlers
-    application.add_handler(CommandHandler("list_flux_models", flux_handlers.list_flux_models))
-    application.add_handler(CommandHandler("set_flux_model", flux_handlers.set_flux_model))
-    application.add_handler(CommandHandler("current_flux_model", flux_handlers.current_flux_model))
-    application.add_handler(CommandHandler("flux", flux_handlers.flux_command))
-
+    flux_handlers.setup_flux_handlers(application)
     # Add handlers from leonardo_handlers
     application.add_handler(CommandHandler("list_leonardo_models", leonardo_handlers.list_leonardo_models))
     application.add_handler(CommandHandler("set_leonardo_model", leonardo_handlers.set_leonardo_model))

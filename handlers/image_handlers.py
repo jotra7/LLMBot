@@ -102,5 +102,7 @@ async def analyze_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text(f"An error occurred while analyzing the image: {str(e)}")
         record_error("image_analysis_error")
 
+
+
 # Ensure these functions are exported
 __all__ = ['generate_image', 'analyze_image']
