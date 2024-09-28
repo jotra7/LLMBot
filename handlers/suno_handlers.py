@@ -347,7 +347,7 @@ async def start_custom_generation(update: Update, context: ContextTypes.DEFAULT_
     
     logger.info(f"Suno custom generation requested by user {user_id} ({user_name})")
 
-    user_generations_today = get_user_generations_today(user_id)
+    user_generations_today = get_user_generations_today(user_id, "suno")
     logger.info(f"User {user_id} has generated {user_generations_today} times today")
     if user_generations_today >= MAX_GENERATIONS_PER_DAY:
         await update.message.reply_text(f"Sorry {user_name}, you have reached your daily limit of {MAX_GENERATIONS_PER_DAY} generations.")
@@ -407,7 +407,7 @@ async def start_custom_generation(update: Update, context: ContextTypes.DEFAULT_
     
     logger.info(f"Suno custom generation requested by user {user_id} ({user_name})")
 
-    user_generations_today = get_user_generations_today(user_id)
+    user_generations_today = get_user_generations_today(user_id,"suno")
     logger.info(f"User {user_id} has generated {user_generations_today} times today")
     if user_generations_today >= MAX_GENERATIONS_PER_DAY:
         await update.message.reply_text(f"Sorry {user_name}, you have reached your daily limit of {MAX_GENERATIONS_PER_DAY} generations.")
@@ -463,15 +463,26 @@ async def get_tags(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 @queue_task('long_run')
 async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    record_command_usage("suno_custom_song") 
+    record_command_usage("suno_custom_song")
     if update.message.text.lower() != 'yes':
         await update.message.reply_text("Generation cancelled. Please start over with /custom_generate_music")
         return ConversationHandler.END
 
     user_id = update.effective_user.id
+    user_name = update.effective_user.username
     chat_id = update.effective_chat.id
 
+    logger.info(f"Custom Suno generation requested by user {user_id} ({user_name})")
+
     try:
+        # Check user's daily limit
+        # We'll use an empty string for generation_id here since it's not used in the function
+        user_generations_today = get_user_generations_today(user_id, "suno")
+        logger.info(f"User {user_id} has generated {user_generations_today} times today")
+        if user_generations_today >= MAX_GENERATIONS_PER_DAY:
+            await update.message.reply_text(f"Sorry {user_name}, you have reached your daily limit of {MAX_GENERATIONS_PER_DAY} generations.")
+            return ConversationHandler.END
+
         data = {
             "title": context.user_data['title'],
             "prompt": context.user_data.get('lyrics', ''),
@@ -501,6 +512,7 @@ async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TY
                     if completed_generation.get('audio_url'):
                         title = completed_generation.get('title', 'Untitled')
                         tags = completed_generation.get('tags', 'N/A')
+                        generation_id = completed_generation['id']
                         
                         caption = (
                             f"🎵 Custom Music Generation Complete! 🎵\n\n"
@@ -511,7 +523,7 @@ async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TY
 
                         audio_file_name = f"{title}.mp3"
                         video_file_name = f"{title}.mp4"
-                        thumb_file_name = f"{completed_generation['id']}_artwork.jpg"
+                        thumb_file_name = f"{generation_id}_artwork.jpg"
 
                         try:
                             # Download audio
@@ -536,7 +548,7 @@ async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TY
                             video_wait_time = 300  # 5 minutes
                             video_check_interval = 30  # Check every 30 seconds
                             for _ in range(video_wait_time // video_check_interval):
-                                video_result = await suno_api_request("get", {"id": completed_generation['id']}, method='GET')
+                                video_result = await suno_api_request("get", {"id": generation_id}, method='GET')
                                 if video_result and video_result[0].get('video_url'):
                                     await download_video(video_result[0]['video_url'], video_file_name)
                                     if os.path.exists(video_file_name):
@@ -570,6 +582,15 @@ async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TY
 
                         # Save user generation
                         save_user_generation(user_id, data['prompt'], "suno")
+                        
+                        # Get updated user's generations today
+                        user_generations_today = get_user_generations_today(user_id, generation_id)
+                        
+                        remaining_generations = max(0, MAX_GENERATIONS_PER_DAY - user_generations_today)
+                        await context.bot.send_message(
+                            chat_id=chat_id,
+                            text=f"You have {remaining_generations} music generations left for today."
+                        )
                     else:
                         await context.bot.edit_message_text(
                             chat_id=chat_id,
