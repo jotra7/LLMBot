@@ -115,7 +115,7 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"Suno generation requested by user {user_id} ({user_name})")
 
-    user_generations_today = get_user_generations_today(user_id)
+    user_generations_today = get_user_generations_today(user_id, "suno")
     logger.info(f"User {user_id} has generated {user_generations_today} times today")
     if user_generations_today >= MAX_GENERATIONS_PER_DAY:
         await context.bot.send_message(
@@ -242,7 +242,7 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     os.remove(file)
 
                         # Save user generation
-                        save_user_generation(user_id, prompt, completed_generation['id'])
+                        save_user_generation(user_id, prompt, "suno")
                     else:
                         await context.bot.edit_message_text(
                             chat_id=chat_id,
@@ -569,7 +569,7 @@ async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TY
                                     os.remove(file)
 
                         # Save user generation
-                        save_user_generation(user_id, data['prompt'], completed_generation['id'])
+                        save_user_generation(user_id, data['prompt'], "suno")
                     else:
                         await context.bot.edit_message_text(
                             chat_id=chat_id,

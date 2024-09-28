@@ -4,9 +4,10 @@ import time
 import functools
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from config import FLUX_MODELS, DEFAULT_FLUX_MODEL
+from config import FLUX_MODELS, DEFAULT_FLUX_MODEL, MAX_FLUX_GENERATIONS_PER_DAY
 from performance_metrics import record_command_usage, record_response_time, record_error
 from queue_system import queue_task
+from database import get_user_generations_today, save_user_generation
 import fal_client
 
 logger = logging.getLogger(__name__)
@@ -43,15 +44,32 @@ async def current_flux_model(update: Update, context: ContextTypes.DEFAULT_TYPE)
     current = context.user_data.get('flux_model', DEFAULT_FLUX_MODEL)
     await update.message.reply_text(f"Current Flux model: {current}")
 
+from config import FLUX_MODELS, DEFAULT_FLUX_MODEL, MAX_FLUX_GENERATIONS_PER_DAY
+from database import get_user_generations_today, save_user_generation
+
 @queue_task('long_run')
 async def flux_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("flux")
+    user_id = update.effective_user.id
+    user_name = update.effective_user.username
+
+    if MAX_FLUX_GENERATIONS_PER_DAY is None:
+        logger.error("MAX_FLUX_GENERATIONS_PER_DAY is not defined in config.py")
+        await update.message.reply_text("Sorry, there's an issue with the generation limit configuration. Please try again later or contact support.")
+        return
+
+    user_generations_today = get_user_generations_today(user_id, "flux")
+    logger.info(f"User {user_id} has generated {user_generations_today} Flux images today")
+    if user_generations_today >= MAX_FLUX_GENERATIONS_PER_DAY:
+        await update.message.reply_text(f"Sorry {user_name}, you have reached your daily limit of {MAX_FLUX_GENERATIONS_PER_DAY} Flux image generations.")
+        return
+
     if not context.args:
         await update.message.reply_text("Please provide a prompt after the /flux command.")
         return
 
     prompt = ' '.join(context.args)
-    logger.info(f"User {update.effective_user.id} requested Flux image generation: '{prompt[:50]}...'")
+    logger.info(f"User {user_id} requested Flux image generation: '{prompt[:50]}...'")
 
     progress_message = await update.message.reply_text("🎨 Initializing Flux image generation...")
 
@@ -96,6 +114,13 @@ async def flux_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 image_url = result['images'][0]['url']
                 logger.info(f"Image URL received: {image_url}")
                 await update.message.reply_photo(photo=image_url, caption=f"Generated image using {model_name} for: {prompt}")
+                
+                # Save user generation
+                save_user_generation(user_id, prompt, "flux")
+                
+                # Calculate and send remaining generations message
+                remaining_generations = MAX_FLUX_GENERATIONS_PER_DAY - (user_generations_today + 1)
+                await update.message.reply_text(f"You have {remaining_generations} Flux image generations left for today.")
             else:
                 logger.error("No image URL in the result")
                 await update.message.reply_text("Sorry, I couldn't generate an image. Please try again.")
@@ -109,8 +134,8 @@ async def flux_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         logger.info(f"Flux image generated using {model_name} in {response_time:.2f} seconds")
 
     except Exception as e:
-        logger.error(f"Flux image generation error for user {update.effective_user.id}: {str(e)}")
+        logger.error(f"Flux image generation error for user {user_id}: {str(e)}")
         await progress_message.edit_text(f"An error occurred while generating the image: {str(e)}")
         record_error("flux_image_generation_error")
     finally:
-        logger.info(f"Flux command execution completed for user {update.effective_user.id}")
+        logger.info(f"Flux command execution completed for user {user_id}")

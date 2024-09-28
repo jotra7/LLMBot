@@ -29,21 +29,15 @@ def init_db():
     try:
         with get_postgres_connection() as conn:
             with conn.cursor() as cur:
-                # Create the users table if it doesn't exist
-                cur.execute("""
-                CREATE TABLE IF NOT EXISTS users
-                (id BIGINT PRIMARY KEY,
-                first_interaction TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
-                """)
+                # ... (existing table creations)
 
-                # Create the conversations table if it doesn't exist
+                # Create the user_generations table if it doesn't exist
                 cur.execute("""
-                CREATE TABLE IF NOT EXISTS conversations
-                (id SERIAL PRIMARY KEY, 
-                user_id BIGINT, 
-                user_message TEXT, 
-                bot_response TEXT, 
-                model_type VARCHAR(10) DEFAULT 'claude',
+                CREATE TABLE IF NOT EXISTS user_generations
+                (id SERIAL PRIMARY KEY,
+                user_id BIGINT,
+                prompt TEXT,
+                generation_type VARCHAR(20),
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
                 """)
             conn.commit()
@@ -51,6 +45,39 @@ def init_db():
     except Exception as e:
         logger.error(f"Error initializing database: {e}")
         raise
+
+def save_user_generation(user_id: int, prompt: str, generation_type: str):
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO user_generations (user_id, prompt, generation_type) VALUES (%s, %s, %s)",
+                    (user_id, prompt, generation_type)
+                )
+            conn.commit()
+        logger.info(f"Generation saved for user {user_id} of type {generation_type}")
+    except Exception as e:
+        logger.error(f"Error saving user generation: {e}")
+
+def get_user_generations_today(user_id: int, generation_type: str = None) -> int:
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                if generation_type:
+                    cur.execute(
+                        "SELECT COUNT(*) FROM user_generations WHERE user_id = %s AND generation_type = %s AND timestamp >= CURRENT_DATE",
+                        (user_id, generation_type)
+                    )
+                else:
+                    cur.execute(
+                        "SELECT COUNT(*) FROM user_generations WHERE user_id = %s AND timestamp >= CURRENT_DATE",
+                        (user_id,)
+                    )
+                return cur.fetchone()[0]
+    except Exception as e:
+        logger.error(f"Error getting user generations: {e}")
+        return 0
+
 
 def save_conversation(user_id: int, user_message: str, bot_response: str, model_type: str = 'claude'):
     try:
@@ -263,7 +290,7 @@ def save_user_generation(user_id: int, prompt: str, generation_id: str):
             )
         conn.commit()
 
-def get_user_generations_today(user_id: int) -> int:
+def get_user_generations_today(user_id: int,  generation_id: str) -> int:
     with get_postgres_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
