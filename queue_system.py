@@ -60,7 +60,7 @@ def queue_task(task_type='quick'):
                 try:
                     result = await func(update, context, *args, **kwargs)
                     if task_type == 'long_run':
-                        await update.message.reply_text("Your requested task has been completed.")
+                        logger.info(f"{task_type} task for user {user_name}({user_id}) completed.")
                     return result
                 except Exception as e:
                     logger.error(f"Error in {task_type} task for user {user_id}: {str(e)}")

@@ -8,4 +8,4 @@ redis
 psycopg2-binary
 pillow
 aiohttp
-
+aiofiles

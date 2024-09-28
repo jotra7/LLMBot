@@ -205,7 +205,7 @@ async def remove_background(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
                 user_generations_today = get_user_generations_today(user_id, "rbb")
                 remaining_generations = max(0, MAX_BRR_PER_DAY - user_generations_today)
-                await update.message.reply_text(f"You have {remaining_generations} bhackground removals left for today.")
+                await update.message.reply_text(f"You have {remaining_generations} background removals left for today.")
 
                 logger.info(f"Background removed successfully for user {user_id}")
             else:

@@ -205,6 +205,7 @@ def get_help_text(category):
             "• /list_flux_models or /list_leonardo_models - View model options.\n"
             "• /set_flux_model or /set_leonardo_model - Select a specific model.\n"
             "• /current_flux_model or /current_leonardo_model - Check active models.\n"
+            "• /remove_bg - Reply to any image with the command to remove the background\n"
             "Let your imagination run wild with AI-powered image creation!"
         ),
         'video_gen': (
