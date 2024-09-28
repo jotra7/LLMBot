@@ -58,7 +58,7 @@ async def generate_text_to_video(update: Update, context: ContextTypes.DEFAULT_T
                 "fal-ai/fast-animatediff/text-to-video",
                 arguments={
                     "prompt": prompt,
-                    "num_frames": 64,
+                    "num_frames": 32,
                     "num_inference_steps": 25,
                     "guidance_scale": 7.5,
                     "fps": 8,
