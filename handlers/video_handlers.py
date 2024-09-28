@@ -7,18 +7,29 @@ from telegram.ext import ContextTypes
 from performance_metrics import record_command_usage, record_response_time, record_error
 from queue_system import queue_task
 import fal_client
+from config import MAX_VIDEO_GENERATIONS_PER_DAY, MAX_I2V_GENERATIONS_PER_DAY
+from database import get_user_generations_today, save_user_generation
 
 logger = logging.getLogger(__name__)
 
 @queue_task('long_run')
 async def generate_text_to_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("generate_text_to_video")
+    user_id = update.effective_user.id
+    user_name = update.effective_user.username
+
+    # Check user's daily limit
+    user_generations_today = get_user_generations_today(user_id, "video")
+    logger.info(f"User {user_id} has generated {user_generations_today} times today")
+    if user_generations_today >= MAX_VIDEO_GENERATIONS_PER_DAY:
+        await update.message.reply_text(f"Sorry {user_name}, you have reached your daily limit of {MAX_VIDEO_GENERATIONS_PER_DAY} generations.")
+        return
+
     if not context.args:
         await update.message.reply_text("Please provide a prompt after the /video command.")
         return
 
     prompt = ' '.join(context.args)
-    user_id = update.effective_user.id
     logger.info(f"User {user_id} requested text-to-video generation: '{prompt[:50]}...'")
 
     progress_message = await update.message.reply_text("🎬 Initializing video generation...")
@@ -68,6 +79,15 @@ async def generate_text_to_video(update: Update, context: ContextTypes.DEFAULT_T
 
             logger.info(f"Video generated successfully for user {user_id}")
 
+            # Save user generation
+            save_user_generation(user_id, prompt, "video")
+
+            # Get updated user's generations today
+            user_generations_today = get_user_generations_today(user_id, "video")
+            
+            remaining_generations = max(0, MAX_VIDEO_GENERATIONS_PER_DAY - user_generations_today)
+            await update.message.reply_text(f"You have {remaining_generations} generations left for today.")
+
         finally:
             progress_task.cancel()
 
@@ -87,11 +107,20 @@ async def generate_text_to_video(update: Update, context: ContextTypes.DEFAULT_T
 @queue_task('long_run')
 async def img2video_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("img2video")
+    user_id = update.effective_user.id
+    user_name = update.effective_user.username
+
+    # Check user's daily limit
+    user_generations_today = get_user_generations_today(user_id, "img2video")
+    logger.info(f"User {user_id} has generated {user_generations_today} times today")
+    if user_generations_today >= MAX_I2V_GENERATIONS_PER_DAY:
+        await update.message.reply_text(f"Sorry {user_name}, you have reached your daily limit of {MAX_I2V_GENERATIONS_PER_DAY} generations.")
+        return
+
     if not update.message.reply_to_message or not update.message.reply_to_message.photo:
         await update.message.reply_text("Please reply to an image with the /img2video command.")
         return
 
-    user_id = update.effective_user.id
     logger.info(f"User {user_id} requested Img2Video conversion")
 
     progress_message = await update.message.reply_text("🎬 Initializing video conversion...")
@@ -145,6 +174,15 @@ async def img2video_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 )
                 
                 await progress_message.delete()
+
+                # Save user generation
+                save_user_generation(user_id, "img2video", "video")
+
+                # Get updated user's generations today
+                user_generations_today = get_user_generations_today(user_id, "img2video")
+                
+                remaining_generations = max(0, MAX_I2V_GENERATIONS_PER_DAY - user_generations_today)
+                await update.message.reply_text(f"You have {remaining_generations} generations left for today.")
             else:
                 logger.error("No video URL in the result")
                 await progress_message.edit_text("Sorry, I couldn't generate a video. Please try again.")
