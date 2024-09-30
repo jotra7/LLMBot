@@ -73,13 +73,19 @@ async def admin_user_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         for user in sorted(active_users, key=lambda x: x['total_messages'], reverse=True)[:10]:
             try:
                 chat_member = await context.bot.get_chat_member(user['id'], user['id'])
-                username = chat_member.user.username or "No username"
+                user_info = chat_member.user
+                if user_info.username:
+                    identifier = f"@{user_info.username}"
+                elif user_info.last_name:
+                    identifier = f"{user_info.first_name} {user_info.last_name}"
+                else:
+                    identifier = user_info.first_name
             except Exception as e:
-                logger.error(f"Error fetching username for user {user['id']}: {e}")
-                username = "Unable to fetch"
+                logger.error(f"Error fetching user info for user {user['id']}: {e}")
+                identifier = "Unable to fetch"
 
             stats_message += (
-                f"User ID: {user['id']} (Username: @{username})\n"
+                f"User ID: {user['id']} (Identifier: {identifier})\n"
                 f"Messages: {user['total_messages']} "
                 f"(Claude: {user['total_claude_messages']}, GPT: {user['total_gpt_messages']})\n"
                 f"Last Active: {user['last_interaction'].strftime('%Y-%m-%d %H:%M:%S')}\n\n"
