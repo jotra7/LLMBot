@@ -56,6 +56,9 @@ async def admin_user_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         stats = get_user_stats()
         active_users = get_active_users(7)  # Get users active in the last 7 days
 
+        logger.info(f"Retrieved user stats: {stats}")
+        logger.info(f"Retrieved {len(active_users)} active users in the last 7 days")
+
         stats_message = (
             f"📊 User Statistics:\n\n"
             f"Total Users: {stats['total_users']}\n"
@@ -101,8 +104,7 @@ async def admin_user_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     except Exception as e:
         logger.error(f"Error in admin_user_stats: {e}")
         await update.message.reply_text(f"An error occurred while retrieving user stats: {e}")
-
-
+        
 async def admin_ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("admin_ban_user")
     if update.effective_user.id not in ADMIN_USER_IDS:

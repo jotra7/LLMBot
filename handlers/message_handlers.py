@@ -56,7 +56,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(assistant_response)
 
         # Save the conversation
-        save_conversation(user_id, user_message, assistant_response)
+        save_conversation(user_id, user_message, assistant_response, model_type='claude')
 
         # Record performance metrics
         end_time = time.time()
@@ -67,7 +67,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error(f"Error processing message for user {user_name} ({user_id}): {str(e)}")
         await update.message.reply_text(f"An error occurred: {str(e)}")
         record_error("message_processing_error")
-
+        
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error(f"Exception while handling an update: {context.error}")
     record_error(str(context.error))

@@ -75,7 +75,6 @@ def record_command_usage(command, user_id=None, username=None):
     else:
         logger.debug(f"Recorded command usage: {command} by anonymous user (ID and username not available)")
 
-
 def record_error(error_type):
     performance_data['errors'][error_type] += 1
     logger.debug(f"Recorded error: {error_type}")

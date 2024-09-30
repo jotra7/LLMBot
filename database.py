@@ -87,15 +87,21 @@ def save_conversation(user_id: int, user_message: str, bot_response: str, model_
                     "INSERT INTO conversations (user_id, user_message, bot_response, model_type) VALUES (%s, %s, %s, %s)",
                     (user_id, user_message, bot_response, model_type)
                 )
-                # Add user to users table if not exists
-                cur.execute(
-                    "INSERT INTO users (id) VALUES (%s) ON CONFLICT (id) DO NOTHING",
-                    (user_id,)
-                )
+                # Add user to users table if not exists and update message counts
+                cur.execute("""
+                    INSERT INTO users (id, total_messages, total_claude_messages, total_gpt_messages, last_interaction) 
+                    VALUES (%s, 1, CASE WHEN %s = 'claude' THEN 1 ELSE 0 END, CASE WHEN %s = 'gpt' THEN 1 ELSE 0 END, NOW())
+                    ON CONFLICT (id) DO UPDATE SET 
+                    total_messages = users.total_messages + 1,
+                    total_claude_messages = users.total_claude_messages + CASE WHEN %s = 'claude' THEN 1 ELSE 0 END,
+                    total_gpt_messages = users.total_gpt_messages + CASE WHEN %s = 'gpt' THEN 1 ELSE 0 END,
+                    last_interaction = NOW()
+                """, (user_id, model_type, model_type, model_type, model_type))
             conn.commit()
-        logger.info(f"Conversation saved for user {user_id} using {model_type} model")
+        logger.info(f"Conversation saved and counts updated for user {user_id} using {model_type} model")
     except Exception as e:
         logger.error(f"Error saving conversation: {e}")
+
 
 def get_user_conversations(user_id: int, limit: int = 5, model_type: Optional[str] = None) -> List[Dict[str, str]]:
     with get_postgres_connection() as conn:
@@ -199,6 +205,41 @@ def get_partial_response(user_id: int, message_id: str) -> str:
     key = f"user:{user_id}:partial_response:{message_id}"
     return redis_client.get(key) or ""
 
+    
+def get_user_stats() -> Dict[str, int]:
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                query = """
+                SELECT 
+                    COUNT(DISTINCT id) as total_users,
+                    COALESCE(SUM(total_messages), 0) as total_messages,
+                    COALESCE(SUM(total_claude_messages), 0) as total_claude_messages,
+                    COALESCE(SUM(total_gpt_messages), 0) as total_gpt_messages,
+                    COUNT(DISTINCT CASE WHEN last_interaction > NOW() - INTERVAL '24 hours' THEN id END) as active_users_24h
+                FROM users
+                """
+                cur.execute(query)
+                result = cur.fetchone()
+                stats = {
+                    "total_users": result[0],
+                    "total_messages": result[1],
+                    "total_claude_messages": result[2],
+                    "total_gpt_messages": result[3],
+                    "active_users_24h": result[4]
+                }
+        logger.info(f"Retrieved user stats: {stats}")
+        return stats
+    except Exception as e:
+        logger.error(f"Error retrieving user stats: {e}")
+        return {
+            "total_users": 0,
+            "total_messages": 0,
+            "total_claude_messages": 0,
+            "total_gpt_messages": 0,
+            "active_users_24h": 0
+        }
+
 def get_active_users(days: int = 7) -> List[Dict[str, any]]:
     try:
         with get_postgres_connection() as conn:
@@ -225,61 +266,7 @@ def get_active_users(days: int = 7) -> List[Dict[str, any]]:
         return active_users
     except Exception as e:
         logger.error(f"Error retrieving active users: {e}")
-        return []
-
-    
-def get_user_stats() -> Dict[str, int]:
-    try:
-        with get_postgres_connection() as conn:
-            with conn.cursor() as cur:
-                # Check if the necessary columns exist
-                cur.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'users' 
-                AND column_name IN ('total_messages', 'total_claude_messages', 'total_gpt_messages')
-                """)
-                existing_columns = [row[0] for row in cur.fetchall()]
-
-                # Construct the query based on existing columns
-                query = """
-                SELECT 
-                    COUNT(DISTINCT id) as total_users,
-                    {0}
-                    COUNT(DISTINCT CASE WHEN last_interaction > NOW() - INTERVAL '24 hours' THEN id END) as active_users_24h
-                FROM users
-                """
-
-                column_sums = []
-                for col in ['total_messages', 'total_claude_messages', 'total_gpt_messages']:
-                    if col in existing_columns:
-                        column_sums.append(f"COALESCE(SUM({col}), 0) as {col}")
-                    else:
-                        column_sums.append(f"0 as {col}")
-
-                query = query.format(', '.join(column_sums) + ',')
-
-                cur.execute(query)
-                result = cur.fetchone()
-                stats = {
-                    "total_users": result[0],
-                    "total_messages": result[1],
-                    "total_claude_messages": result[2],
-                    "total_gpt_messages": result[3],
-                    "active_users_24h": result[4]
-                }
-        logger.info("Retrieved user stats")
-        return stats
-    except Exception as e:
-        logger.error(f"Error retrieving user stats: {e}")
-        return {
-            "total_users": 0,
-            "total_messages": 0,
-            "total_claude_messages": 0,
-            "total_gpt_messages": 0,
-            "active_users_24h": 0
-        }
-    
+        return []    
     
 def save_user_generation(user_id: int, prompt: str, generation_id: str):
     with get_postgres_connection() as conn:
