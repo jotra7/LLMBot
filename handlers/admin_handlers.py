@@ -28,11 +28,13 @@ async def admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.message.reply_text("You don't have permission to use this command.")
         return
     
-    if not context.args:
+    # Get the full message text after removing the /admin_broadcast command
+    message = update.message.text.partition(' ')[2]
+    
+    if not message:
         await update.message.reply_text("Please provide a message to broadcast.")
         return
     
-    message = ' '.join(context.args)
     users = get_all_users()
     success_count = 0
     for user_id in users:
