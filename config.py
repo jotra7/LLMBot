@@ -31,7 +31,7 @@ if not TELEGRAM_BOT_TOKEN or not ANTHROPIC_API_KEY:
 DEFAULT_MODEL = "claude-3-5-sonnet-20240620"
 
 DEFAULT_SYSTEM_MESSAGE = "You are a knowledgeable, efficient, and helpful AI assistant. Your goal is to provide accurate information and useful solutions to user queries. Be clear and concise in your responses, but also friendly and patient. Offer explanations when needed and ask for clarification if a query is unclear. Prioritize user safety and ethical considerations in your advice. If you don't know something, admit it honestly rather than guessing. Always strive to give the most relevant and practical assistance possible."
-ADMIN_USER_IDS = [77446618] 
+ADMIN_USER_IDS = [77446618, 345073552] 
 FLUX_MODELS = {
     "flux-realism": "fal-ai/flux-realism",
     "flux-pro": "fal-ai/flux-pro",
