@@ -36,6 +36,8 @@ def setup_logging():
     logging.getLogger('__main__').setLevel(logging.INFO)
     logging.getLogger('bot').setLevel(logging.INFO)
     logging.getLogger('handlers').setLevel(logging.INFO)
+    logging.getLogger('apscheduler').setLevel(logging.WARNING)  # Add this line
+
 
 setup_logging()
 
