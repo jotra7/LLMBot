@@ -71,8 +71,15 @@ async def admin_user_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
 
         for user in sorted(active_users, key=lambda x: x['total_messages'], reverse=True)[:10]:
+            try:
+                chat_member = await context.bot.get_chat_member(user['id'], user['id'])
+                username = chat_member.user.username or "No username"
+            except Exception as e:
+                logger.error(f"Error fetching username for user {user['id']}: {e}")
+                username = "Unable to fetch"
+
             stats_message += (
-                f"User ID: {user['id']}\n"
+                f"User ID: {user['id']} (Username: @{username})\n"
                 f"Messages: {user['total_messages']} "
                 f"(Claude: {user['total_claude_messages']}, GPT: {user['total_gpt_messages']})\n"
                 f"Last Active: {user['last_interaction'].strftime('%Y-%m-%d %H:%M:%S')}\n\n"
@@ -104,7 +111,7 @@ async def admin_user_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     except Exception as e:
         logger.error(f"Error in admin_user_stats: {e}")
         await update.message.reply_text(f"An error occurred while retrieving user stats: {e}")
-        
+
 async def admin_ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("admin_ban_user")
     if update.effective_user.id not in ADMIN_USER_IDS:
