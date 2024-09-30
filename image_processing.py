@@ -14,7 +14,7 @@ async def generate_image_openai(prompt):
 async def analyze_image_openai(image_bytes):
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
     response = await openai_client.chat.completions.create(
-        model="gpt-4-vision-preview",
+        model="gpt-4o",
         messages=[
             {
                 "role": "user",
