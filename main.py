@@ -42,7 +42,7 @@ def setup_logging():
 setup_logging()
 
 logger = logging.getLogger(__name__)
-logging.getLogger('apscheduler').setLevel(logging.INFO)
+
 
 async def main():
     logger.info("Starting main function")
