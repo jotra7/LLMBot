@@ -203,7 +203,7 @@ def get_help_text(category):
             "• /flux <prompt> - Generate realistic images using Flux AI.\n"
             "• /leo <prompt> - Create images with Leonardo.ai.\n"
             "• /photomaker - Create personalized images based on your photos.\n"
-            "• /san_andreas - Reply to any image with the command to remove the background\n"
+            "• /san_andreas - Make images in the style of GTA\n"
             "• /list_flux_models or /list_leonardo_models - View model options.\n"
             "• /set_flux_model or /set_leonardo_model - Select a specific model.\n"
             "• /current_flux_model or /current_leonardo_model - Check active models.\n"
