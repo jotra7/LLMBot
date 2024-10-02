@@ -202,6 +202,7 @@ def get_help_text(category):
             "• /generate_image <prompt> - Create images with DALL-E 3.\n"
             "• /flux <prompt> - Generate realistic images using Flux AI.\n"
             "• /leo <prompt> - Create images with Leonardo.ai.\n"
+            "• /san_andreas - Reply to any image with the command to remove the background\n"
             "• /list_flux_models or /list_leonardo_models - View model options.\n"
             "• /set_flux_model or /set_leonardo_model - Select a specific model.\n"
             "• /current_flux_model or /current_leonardo_model - Check active models.\n"
