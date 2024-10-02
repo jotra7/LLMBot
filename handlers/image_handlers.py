@@ -9,7 +9,7 @@ from image_processing import generate_image_openai, analyze_image_openai
 from performance_metrics import record_command_usage, record_response_time, record_error
 from queue_system import queue_task
 from image_processing import generate_image_openai
-
+from database import save_conversation
 logger = logging.getLogger(__name__)
 
 
@@ -36,6 +36,7 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await asyncio.sleep(2)
 
         # Start the progress updater
+
         progress_task = asyncio.create_task(update_progress())
 
         try:
@@ -43,6 +44,8 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             image_url = await generate_image_openai(prompt)
             
             await update.message.reply_photo(photo=image_url, caption=f"Generated image for: {prompt}")
+            save_conversation(update.effective_user.id, prompt, "Image generated", "image")
+
         finally:
             # Cancel the progress task
             progress_task.cancel()

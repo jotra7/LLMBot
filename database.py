@@ -83,11 +83,12 @@ def save_conversation(user_id: int, user_message: str, bot_response: str, model_
     try:
         with get_postgres_connection() as conn:
             with conn.cursor() as cur:
+                # Insert into conversations table
                 cur.execute(
                     "INSERT INTO conversations (user_id, user_message, bot_response, model_type) VALUES (%s, %s, %s, %s)",
                     (user_id, user_message, bot_response, model_type)
                 )
-                # Add user to users table if not exists and update message counts
+                # Update or insert into users table
                 cur.execute("""
                     INSERT INTO users (id, total_messages, total_claude_messages, total_gpt_messages, last_interaction) 
                     VALUES (%s, 1, CASE WHEN %s = 'claude' THEN 1 ELSE 0 END, CASE WHEN %s = 'gpt' THEN 1 ELSE 0 END, NOW())
@@ -101,7 +102,6 @@ def save_conversation(user_id: int, user_message: str, bot_response: str, model_
         logger.info(f"Conversation saved and counts updated for user {user_id} using {model_type} model")
     except Exception as e:
         logger.error(f"Error saving conversation: {e}")
-
 
 def get_user_conversations(user_id: int, limit: int = 5, model_type: Optional[str] = None) -> List[Dict[str, str]]:
     with get_postgres_connection() as conn:
