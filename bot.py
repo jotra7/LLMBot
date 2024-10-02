@@ -11,7 +11,8 @@ from handlers import (
     message_handlers,
     leonardo_handlers,
     gpt_handlers,
-    suno_handlers
+    suno_handlers,
+    replicate_handlers
 )
 
 from model_cache import periodic_cache_update
@@ -76,6 +77,8 @@ def create_application():
     # Add Suno handlers
     suno_handlers.setup_suno_handlers(application)  # Add this line
     suno_handlers.setup_custom_music_handler(application)  
+    # Add replicate Handlers
+    replicate_handlers.setup_replicate_handlers(application)
 
     # Add message handler
     application.add_handler(MessageHandler(
