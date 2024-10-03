@@ -18,6 +18,9 @@ if "REPLICATE_API_TOKEN" not in os.environ:
 
 SAN_ANDREAS_MODEL = "levelsio/san-andreas:61cdb2f6a8f234ea9ca3cce88d5454f9b951f93619f5f353a331407f4a05a314"
 PHOTOMAKER_MODEL = "tencentarc/photomaker:ddfc2b08d209f9fa8c1eca692712918bd449f695dabb4a958da31802a9570fe4"
+BECOME_IMAGE_MODEL = "fofr/become-image:8d0b076a2aff3904dfcec3253c778e0310a68f78483c4699c7fd800f3051d2b3"
+PHOTOMAKER_STYLE_MODEL = "tencentarc/photomaker-style:467d062309da518648ba89d226490e02b8ed09b5abc15026e54e31c5a8cd0769"
+
 SAN_ANDREAS_TRIGGER_WORD = "STL"
 PHOTOMAKER_TRIGGER_WORD = "IMG"
 
@@ -29,6 +32,8 @@ PHOTOMAKER_STYLES = [
 
 # Define conversation states
 UPLOADING, PROMPT, STYLE = range(3)
+UPLOAD_PERSON, UPLOAD_TARGET = range(2)
+UPLOADING, PROMPT, ADDITIONAL_IMAGES = range(3)
 
 async def photomaker_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     record_command_usage("photomaker")
@@ -82,30 +87,6 @@ async def get_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     
     return STYLE
 
-import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, filters
-from config import MAX_REPLICATE_GENERATIONS_PER_DAY
-from performance_metrics import record_command_usage, record_response_time, record_error
-from queue_system import queue_task
-from database import get_user_generations_today, save_user_generation
-import replicate
-
-logger = logging.getLogger(__name__)
-
-PHOTOMAKER_MODEL = "tencentarc/photomaker:ddfc2b08d209f9fa8c1eca692712918bd449f695dabb4a958da31802a9570fe4"
-PHOTOMAKER_TRIGGER_WORD = "img"
-
-PHOTOMAKER_STYLES = [
-    "(No style)", "Cinematic", "Disney Charactor", "Digital Art", 
-    "Photographic (Default)", "Fantasy art", "Neonpunk", "Enhance", 
-    "Comic book", "Lowpoly", "Line art"
-]
-
-# Define conversation states
-UPLOADING, PROMPT, STYLE = range(3)
-
-# ... [previous functions remain unchanged]
 
 async def get_style(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -269,6 +250,219 @@ async def san_andreas_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     finally:
         logger.info(f"San Andreas command execution completed for user {user_id}")
 
+async def become_image_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    record_command_usage("become_image")
+    user_id = update.effective_user.id
+    user_name = update.effective_user.username
+    logger.info(f"Become Image started by user {user_id} ({user_name})")
+
+    user_generations_today = get_user_generations_today(user_id, "replicate")
+    logger.info(f"User {user_id} has generated {user_generations_today} Replicate images today")
+    if user_generations_today >= MAX_REPLICATE_GENERATIONS_PER_DAY:
+        logger.warning(f"User {user_id} reached daily limit for Replicate generations")
+        await update.message.reply_text(f"Sorry {user_name}, you have reached your daily limit of {MAX_REPLICATE_GENERATIONS_PER_DAY} Replicate image generations.")
+        return ConversationHandler.END
+
+    await update.message.reply_text("Please upload an image of the person you want to transform.")
+    return UPLOAD_PERSON
+
+async def upload_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message.photo:
+        file = await update.message.photo[-1].get_file()
+        context.user_data['person_image'] = file.file_path
+        await update.message.reply_text("Person image received. Now, please upload the target image you want the person to become.")
+        return UPLOAD_TARGET
+    else:
+        await update.message.reply_text("Please upload an image.")
+        return UPLOAD_PERSON
+
+async def upload_target(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message.photo:
+        file = await update.message.photo[-1].get_file()
+        context.user_data['target_image'] = file.file_path
+        
+        # Prepare data for the job
+        job_data = {
+            'chat_id': update.effective_chat.id,
+            'user_id': update.effective_user.id,
+            'person_image': context.user_data['person_image'],
+            'target_image': file.file_path
+        }
+        
+        # Schedule the image generation task
+        context.job_queue.run_once(generate_become_image, 0, data=job_data, name=f"generate_become_image_{update.effective_user.id}")
+        
+        await update.message.reply_text("Your 'Become Image' request has been queued. Please wait...")
+        return ConversationHandler.END
+    else:
+        await update.message.reply_text("Please upload an image.")
+        return UPLOAD_TARGET
+
+async def generate_become_image(context: ContextTypes.DEFAULT_TYPE) -> None:
+    job = context.job
+    data = job.data
+    chat_id = data.get('chat_id')
+    user_id = data.get('user_id')
+    
+    if not chat_id or not user_id:
+        logger.error(f"Chat ID or User ID not found")
+        return
+
+    try:
+        await context.bot.send_message(chat_id=chat_id, text="Generating 'Become Image', please wait...")
+
+        input_data = {
+            "image": data['person_image'],
+            "image_to_become": data['target_image'],
+            "prompt_strength": 2,
+            "number_of_images": 1,
+            "denoising_strength": 0.75,
+            "image_to_become_strength": 0.75,
+        }
+
+        logger.info(f"Sending request to Replicate API with input data: {input_data}")
+        output = replicate.run(BECOME_IMAGE_MODEL, input=input_data)
+        logger.info(f"Received output from Replicate API: {output}")
+
+        if output and len(output) > 0:
+            image_url = output[0]
+            caption = "Generated 'Become Image' result"
+            await context.bot.send_photo(chat_id=chat_id, photo=image_url, caption=caption)
+            
+            save_user_generation(user_id, "become_image", "replicate")
+            
+            user_generations_today = get_user_generations_today(user_id, "replicate")
+            remaining_generations = MAX_REPLICATE_GENERATIONS_PER_DAY - user_generations_today
+            await context.bot.send_message(chat_id=chat_id, text=f"You have {remaining_generations} Replicate image generations left for today.")
+        else:
+            await context.bot.send_message(chat_id=chat_id, text="Sorry, I couldn't generate the 'Become Image'. Please try again.")
+
+    except Exception as e:
+        logger.error(f"Become Image generation error for user {user_id}: {str(e)}")
+        await context.bot.send_message(chat_id=chat_id, text=f"An error occurred while generating the 'Become Image': {str(e)}")
+        record_error("become_image_generation_error")
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("'Become Image' process cancelled.")
+    return ConversationHandler.END
+
+async def photomaker_style_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    record_command_usage("photomaker_style")
+    user_id = update.effective_user.id
+    user_name = update.effective_user.username
+    logger.info(f"Photomaker Style started by user {user_id} ({user_name})")
+
+    user_generations_today = get_user_generations_today(user_id, "replicate")
+    logger.info(f"User {user_id} has generated {user_generations_today} Replicate images today")
+    if user_generations_today >= MAX_REPLICATE_GENERATIONS_PER_DAY:
+        logger.warning(f"User {user_id} reached daily limit for Replicate generations")
+        await update.message.reply_text(f"Sorry {user_name}, you have reached your daily limit of {MAX_REPLICATE_GENERATIONS_PER_DAY} Replicate image generations.")
+        return ConversationHandler.END
+
+    await update.message.reply_text("Please upload the main input image.")
+    context.user_data['photomaker_style_images'] = []
+    return UPLOADING
+
+async def upload_images_style(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message.photo:
+        file = await update.message.photo[-1].get_file()
+        file_url = file.file_path
+        context.user_data['photomaker_style_images'].append(file_url)
+        
+        if len(context.user_data['photomaker_style_images']) == 1:
+            await update.message.reply_text("Main image received. You can now upload up to 3 additional images or type /done to proceed.")
+            return ADDITIONAL_IMAGES
+        elif len(context.user_data['photomaker_style_images']) < 4:
+            await update.message.reply_text(f"Image received. Total images: {len(context.user_data['photomaker_style_images'])}. You can upload more or type /done to proceed.")
+            return ADDITIONAL_IMAGES
+        else:
+            await update.message.reply_text("Maximum number of images reached. Please provide your prompt. Remember to include 'img' in your prompt as the trigger word.")
+            return PROMPT
+    elif update.message.text == "/done":
+        if not context.user_data['photomaker_style_images']:
+            await update.message.reply_text("You need to upload at least one image. Please upload an image.")
+            return UPLOADING
+        await update.message.reply_text("Please provide your prompt. Remember to include 'img' in your prompt as the trigger word.")
+        return PROMPT
+    else:
+        await update.message.reply_text("Please upload an image or type /done when finished.")
+        return ADDITIONAL_IMAGES
+
+async def get_prompt_style(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    prompt = update.message.text
+    if "img" not in prompt:
+        prompt += " img"
+        await update.message.reply_text("I've added 'img' to your prompt as it's required for the model.")
+    
+    context.user_data['photomaker_style_prompt'] = prompt
+    
+    # Prepare data for the job
+    job_data = {
+        'chat_id': update.effective_chat.id,
+        'user_id': update.effective_user.id,
+        'photomaker_style_prompt': prompt,
+        'photomaker_style_images': context.user_data.get('photomaker_style_images', [])
+    }
+    
+    # Schedule the image generation task
+    context.job_queue.run_once(generate_photomaker_style_image, 0, data=job_data, name=f"generate_photomaker_style_{update.effective_user.id}")
+    
+    await update.message.reply_text("Your Photomaker Style image generation request has been queued. Please wait...")
+    return ConversationHandler.END
+
+async def generate_photomaker_style_image(context: ContextTypes.DEFAULT_TYPE) -> None:
+    job = context.job
+    data = job.data
+    chat_id = data.get('chat_id')
+    user_id = data.get('user_id')
+    
+    if not chat_id or not user_id:
+        logger.error(f"Chat ID or User ID not found")
+        return
+
+    try:
+        await context.bot.send_message(chat_id=chat_id, text="Generating Photomaker Style image, please wait...")
+
+        input_data = {
+            "input_image": data['photomaker_style_images'][0],
+            "prompt": data['photomaker_style_prompt'],
+            "style_name": "(No style)",
+            "num_outputs": 1,
+            "guidance_scale": 5,
+            "num_inference_steps": 20,
+            "negative_prompt": "realistic, photo-realistic, worst quality, greyscale, bad anatomy, bad hands, error, text",
+        }
+        
+        # Add additional images if provided
+        for i, img_url in enumerate(data['photomaker_style_images'][1:], start=2):
+            input_data[f"input_image{i}"] = img_url
+
+        logger.info(f"Sending request to Replicate API with input data: {input_data}")
+        output = replicate.run(PHOTOMAKER_STYLE_MODEL, input=input_data)
+        logger.info(f"Received output from Replicate API: {output}")
+
+        if output and len(output) > 0:
+            image_url = output[0]
+            caption = f"Generated image using Photomaker Style:\nPrompt: {data['photomaker_style_prompt']}"
+            await context.bot.send_photo(chat_id=chat_id, photo=image_url, caption=caption)
+            
+            save_user_generation(user_id, data['photomaker_style_prompt'], "replicate")
+            
+            user_generations_today = get_user_generations_today(user_id, "replicate")
+            remaining_generations = MAX_REPLICATE_GENERATIONS_PER_DAY - user_generations_today
+            await context.bot.send_message(chat_id=chat_id, text=f"You have {remaining_generations} Replicate image generations left for today.")
+        else:
+            await context.bot.send_message(chat_id=chat_id, text="Sorry, I couldn't generate an image. Please try again.")
+
+    except Exception as e:
+        logger.error(f"Photomaker Style image generation error for user {user_id}: {str(e)}")
+        await context.bot.send_message(chat_id=chat_id, text=f"An error occurred while generating the image: {str(e)}")
+        record_error("photomaker_style_image_generation_error")
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Photomaker Style process cancelled.")
+    return ConversationHandler.END
+
 def setup_replicate_handlers(application):
     logger.info("Setting up replicate handlers")
     
@@ -281,7 +475,28 @@ def setup_replicate_handlers(application):
         },
         fallbacks=[CommandHandler("cancel", cancel)]
     )
+    photomaker_style_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("photomaker_style", photomaker_style_start)],
+        states={
+            UPLOADING: [MessageHandler(filters.PHOTO, upload_images_style)],
+            ADDITIONAL_IMAGES: [MessageHandler(filters.PHOTO | filters.Regex('^/done$'), upload_images_style)],
+            PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_prompt_style)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+    
+    become_image_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("become_image", become_image_start)],
+        states={
+            UPLOAD_PERSON: [MessageHandler(filters.PHOTO, upload_person)],
+            UPLOAD_TARGET: [MessageHandler(filters.PHOTO, upload_target)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
     
     application.add_handler(photomaker_conv_handler)
-    application.add_handler(CommandHandler("san_andreas", san_andreas_command))  
+    application.add_handler(become_image_conv_handler)
+    application.add_handler(photomaker_style_conv_handler)
+    application.add_handler(CommandHandler("san_andreas", san_andreas_command))
+    
     logger.info("Replicate handlers set up successfully")
