@@ -9,6 +9,8 @@ from performance_metrics import record_command_usage, record_response_time, reco
 from queue_system import queue_task
 from database import get_user_generations_today, save_user_generation
 import replicate
+import aiohttp
+import io 
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +22,8 @@ SAN_ANDREAS_MODEL = "levelsio/san-andreas:61cdb2f6a8f234ea9ca3cce88d5454f9b951f9
 PHOTOMAKER_MODEL = "tencentarc/photomaker:ddfc2b08d209f9fa8c1eca692712918bd449f695dabb4a958da31802a9570fe4"
 BECOME_IMAGE_MODEL = "fofr/become-image:8d0b076a2aff3904dfcec3253c778e0310a68f78483c4699c7fd800f3051d2b3"
 PHOTOMAKER_STYLE_MODEL = "tencentarc/photomaker-style:467d062309da518648ba89d226490e02b8ed09b5abc15026e54e31c5a8cd0769"
+REAL_ESRGAN_MODEL = "nightmareai/real-esrgan:42fed1c4974146d4d2414e2be2c5277c7fcf05fcc3a73abf41610695738c1d7b"
+
 
 SAN_ANDREAS_TRIGGER_WORD = "STL"
 PHOTOMAKER_TRIGGER_WORD = "IMG"
@@ -34,6 +38,7 @@ PHOTOMAKER_STYLES = [
 UPLOADING, PROMPT, STYLE = range(3)
 UPLOAD_PERSON, UPLOAD_TARGET = range(2)
 UPLOADING, PROMPT, ADDITIONAL_IMAGES = range(3)
+UPLOAD_IMAGE, SCALE_FACTOR, FACE_ENHANCE = range(3)
 
 async def photomaker_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     record_command_usage("photomaker")
@@ -463,6 +468,150 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Photomaker Style process cancelled.")
     return ConversationHandler.END
 
+async def upscale_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    record_command_usage("upscale")
+    user_id = update.effective_user.id
+    user_name = update.effective_user.username
+    logger.info(f"Upscale started by user {user_id} ({user_name})")
+
+    user_generations_today = get_user_generations_today(user_id, "replicate")
+    logger.info(f"User {user_id} has generated {user_generations_today} Replicate images today")
+    if user_generations_today >= MAX_REPLICATE_GENERATIONS_PER_DAY:
+        logger.warning(f"User {user_id} reached daily limit for Replicate generations")
+        await update.message.reply_text(f"Sorry {user_name}, you have reached your daily limit of {MAX_REPLICATE_GENERATIONS_PER_DAY} Replicate image generations.")
+        return ConversationHandler.END
+
+    await update.message.reply_text("Please upload the image you want to upscale.")
+    return UPLOAD_IMAGE
+
+async def upload_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message.photo:
+        file = await update.message.photo[-1].get_file()
+        context.user_data['upscale_image'] = file.file_path
+        await update.message.reply_text("Image received. Now, please enter the scale factor (1-5).")
+        return SCALE_FACTOR
+    else:
+        await update.message.reply_text("Please upload an image.")
+        return UPLOAD_IMAGE
+
+async def get_scale_factor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        scale = float(update.message.text)
+        if 1 <= scale <= 5:
+            context.user_data['scale_factor'] = scale
+            
+            keyboard = [
+                [InlineKeyboardButton("Yes", callback_data='face_enhance_yes'),
+                 InlineKeyboardButton("No", callback_data='face_enhance_no')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text("Do you want to enhance faces in the image?", reply_markup=reply_markup)
+            return FACE_ENHANCE
+        else:
+            await update.message.reply_text("Please enter a valid scale factor between 1 and 5.")
+            return SCALE_FACTOR
+    except ValueError:
+        await update.message.reply_text("Please enter a valid number for the scale factor.")
+        return SCALE_FACTOR
+
+async def face_enhance_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    
+    face_enhance = query.data == 'face_enhance_yes'
+    context.user_data['face_enhance'] = face_enhance
+    
+    # Prepare data for the job
+    job_data = {
+        'chat_id': update.effective_chat.id,
+        'user_id': update.effective_user.id,
+        'upscale_image': context.user_data['upscale_image'],
+        'scale_factor': context.user_data['scale_factor'],
+        'face_enhance': face_enhance
+    }
+    
+    # Schedule the image upscaling task
+    context.job_queue.run_once(generate_upscaled_image, 0, data=job_data, name=f"generate_upscaled_image_{update.effective_user.id}")
+    
+    await query.edit_message_text("Your upscaling request has been queued. Please wait...")
+    return ConversationHandler.END
+
+async def generate_upscaled_image(context: ContextTypes.DEFAULT_TYPE) -> None:
+    job = context.job
+    data = job.data
+    chat_id = data.get('chat_id')
+    user_id = data.get('user_id')
+    
+    if not chat_id or not user_id:
+        logger.error(f"Chat ID or User ID not found")
+        return
+
+    try:
+        await context.bot.send_message(chat_id=chat_id, text="Upscaling image, please wait...")
+
+        input_data = {
+            "image": data['upscale_image'],
+            "scale": data['scale_factor'],
+            "face_enhance": data['face_enhance']
+        }
+
+        logger.info(f"Sending request to Replicate API with input data: {input_data}")
+        output = replicate.run(REAL_ESRGAN_MODEL, input=input_data)
+        logger.info(f"Received output from Replicate API: {output}")
+
+        if output and isinstance(output, str):
+            image_url = output
+            caption = f"Upscaled image (Scale factor: {data['scale_factor']}x, Face enhance: {'Yes' if data['face_enhance'] else 'No'})"
+            
+            max_retries = 3
+            retry_delay = 5  # seconds
+
+            for attempt in range(max_retries):
+                try:
+                    await asyncio.sleep(retry_delay * (attempt + 1))
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(image_url) as resp:
+                            if resp.status == 200:
+                                image_data = await resp.read()
+                                image_size = len(image_data)
+                                logger.info(f"Downloaded image size: {image_size} bytes")
+
+                                if image_size <= 10 * 1024 * 1024:  # 10MB limit for photos
+                                    await context.bot.send_photo(chat_id=chat_id, photo=image_data, caption=caption)
+                                else:
+                                    # Send as document if it's too large for a photo
+                                    image_io = io.BytesIO(image_data)
+                                    image_io.name = "upscaled_image.png"
+                                    await context.bot.send_document(chat_id=chat_id, document=image_io, caption=caption)
+                                break
+                            else:
+                                logger.warning(f"Attempt {attempt + 1}: Failed to download image, status code: {resp.status}")
+                                if attempt == max_retries - 1:
+                                    raise Exception(f"Failed to download image after {max_retries} attempts")
+                except Exception as download_error:
+                    logger.error(f"Attempt {attempt + 1}: Error downloading/sending image: {str(download_error)}")
+                    if attempt == max_retries - 1:
+                        # If all attempts fail, send the URL
+                        await context.bot.send_message(chat_id=chat_id, 
+                                                       text=f"I couldn't send the image directly, but you can view it here: {image_url}\n\n{caption}")
+            
+            save_user_generation(user_id, "upscale", "replicate")
+            
+            user_generations_today = get_user_generations_today(user_id, "replicate")
+            remaining_generations = MAX_REPLICATE_GENERATIONS_PER_DAY - user_generations_today
+            await context.bot.send_message(chat_id=chat_id, text=f"You have {remaining_generations} Replicate image generations left for today.")
+        else:
+            await context.bot.send_message(chat_id=chat_id, text="Sorry, I couldn't upscale the image. Please try again.")
+
+    except Exception as e:
+        logger.error(f"Image upscaling error for user {user_id}: {str(e)}")
+        await context.bot.send_message(chat_id=chat_id, text=f"An error occurred while upscaling the image: {str(e)}")
+        record_error("image_upscaling_error")
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Image upscaling process cancelled.")
+    return ConversationHandler.END
+
 def setup_replicate_handlers(application):
     logger.info("Setting up replicate handlers")
     
@@ -494,9 +643,20 @@ def setup_replicate_handlers(application):
         fallbacks=[CommandHandler("cancel", cancel)]
     )
     
+    upscale_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("upscale", upscale_start)],
+        states={
+            UPLOAD_IMAGE: [MessageHandler(filters.PHOTO, upload_image)],
+            SCALE_FACTOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_scale_factor)],
+            FACE_ENHANCE: [CallbackQueryHandler(face_enhance_callback, pattern='^face_enhance_')],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+   
     application.add_handler(photomaker_conv_handler)
     application.add_handler(become_image_conv_handler)
     application.add_handler(photomaker_style_conv_handler)
+    application.add_handler(upscale_conv_handler)
     application.add_handler(CommandHandler("san_andreas", san_andreas_command))
     
     logger.info("Replicate handlers set up successfully")
