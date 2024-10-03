@@ -18,7 +18,8 @@ from handlers import (
 from model_cache import periodic_cache_update
 from voice_cache import periodic_voice_cache_update
 from performance_metrics import save_performance_data
-from datetime import timedelta
+from database import cleanup_old_generations
+from datetime import timedelta, time
 
 def create_application():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
@@ -110,7 +111,8 @@ async def initialize_bot():
     application.job_queue.run_repeating(save_performance_data, interval=timedelta(hours=1), first=10)
     application.job_queue.run_once(leonardo_handlers.update_leonardo_model_cache, when=0)
     application.job_queue.run_repeating(leonardo_handlers.update_leonardo_model_cache, interval=timedelta(days=1), first=timedelta(days=1))
-    
+    application.job_queue.run_daily(lambda _: cleanup_old_generations(), time=time(hour=0, minute=0))
+
     # Initialize the application
     await application.initialize()
     

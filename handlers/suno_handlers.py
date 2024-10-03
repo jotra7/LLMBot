@@ -108,6 +108,9 @@ async def generate_lyrics_summary(lyrics):
         return "Unable to generate lyrics summary."
 
 
+SUNO_GENERATION_TYPE = "suno"
+
+@queue_task('long_run')
 async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_name = update.effective_user.username
@@ -115,7 +118,7 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"Suno generation requested by user {user_id} ({user_name})")
 
-    user_generations_today = get_user_generations_today(user_id, "suno")
+    user_generations_today = get_user_generations_today(user_id, SUNO_GENERATION_TYPE)
     logger.info(f"User {user_id} has generated {user_generations_today} times today")
     if user_generations_today >= MAX_GENERATIONS_PER_DAY:
         await context.bot.send_message(
@@ -242,7 +245,7 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     os.remove(file)
 
                         # Save user generation
-                        save_user_generation(user_id, prompt, "suno")
+                        save_user_generation(user_id, prompt, SUNO_GENERATION_TYPE)
                     else:
                         await context.bot.edit_message_text(
                             chat_id=chat_id,
@@ -268,7 +271,16 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=chat_id,
             text="An error occurred while generating your music. Please try again later."
         )
-
+    
+    finally:
+        # Get updated user's generations today
+        user_generations_today = get_user_generations_today(user_id, SUNO_GENERATION_TYPE)
+        remaining_generations = max(0, MAX_GENERATIONS_PER_DAY - user_generations_today)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"You have {remaining_generations} music generations left for today."
+        )
+        
 async def wait_for_initial_details(generation_ids, chat_id, context, message):
     start_time = time.time()
     

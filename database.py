@@ -46,39 +46,6 @@ def init_db():
         logger.error(f"Error initializing database: {e}")
         raise
 
-def save_user_generation(user_id: int, prompt: str, generation_type: str):
-    try:
-        with get_postgres_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO user_generations (user_id, prompt, generation_type) VALUES (%s, %s, %s)",
-                    (user_id, prompt, generation_type)
-                )
-            conn.commit()
-        logger.info(f"Generation saved for user {user_id} of type {generation_type}")
-    except Exception as e:
-        logger.error(f"Error saving user generation: {e}")
-
-def get_user_generations_today(user_id: int, generation_type: str = None) -> int:
-    try:
-        with get_postgres_connection() as conn:
-            with conn.cursor() as cur:
-                if generation_type:
-                    cur.execute(
-                        "SELECT COUNT(*) FROM user_generations WHERE user_id = %s AND generation_type = %s AND timestamp >= CURRENT_DATE",
-                        (user_id, generation_type)
-                    )
-                else:
-                    cur.execute(
-                        "SELECT COUNT(*) FROM user_generations WHERE user_id = %s AND timestamp >= CURRENT_DATE",
-                        (user_id,)
-                    )
-                return cur.fetchone()[0]
-    except Exception as e:
-        logger.error(f"Error getting user generations: {e}")
-        return 0
-
-
 def save_conversation(user_id: int, user_message: str, bot_response: str, model_type: str = 'claude'):
     try:
         with get_postgres_connection() as conn:
@@ -268,20 +235,51 @@ def get_active_users(days: int = 7) -> List[Dict[str, any]]:
         logger.error(f"Error retrieving active users: {e}")
         return []    
     
-def save_user_generation(user_id: int, prompt: str, generation_id: str):
-    with get_postgres_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO user_generations (user_id, prompt, generation_id, timestamp) VALUES (%s, %s, %s, %s)",
-                (user_id, prompt, generation_id, datetime.datetime.now())
-            )
-        conn.commit()
+def save_user_generation(user_id: int, prompt: str, generation_type: str):
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO user_generations (user_id, prompt, generation_type, timestamp) VALUES (%s, %s, %s, CURRENT_TIMESTAMP)",
+                    (user_id, prompt, generation_type)
+                )
+            conn.commit()
+        logger.info(f"Generation saved for user {user_id} of type {generation_type}")
+    except Exception as e:
+        logger.error(f"Error saving user generation: {e}")
 
-def get_user_generations_today(user_id: int,  generation_id: str) -> int:
-    with get_postgres_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT COUNT(*) FROM user_generations WHERE user_id = %s AND timestamp >= %s",
-                (user_id, datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0))
-            )
-            return cur.fetchone()[0]
+def get_user_generations_today(user_id: int, generation_type: str = None) -> int:
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT CURRENT_DATE, CURRENT_TIMESTAMP")
+                db_date, db_timestamp = cur.fetchone()
+                logger.info(f"Database current date: {db_date}, timestamp: {db_timestamp}")
+                
+                if generation_type:
+                    cur.execute(
+                        "SELECT COUNT(*) FROM user_generations WHERE user_id = %s AND generation_type = %s AND timestamp::date = CURRENT_DATE",
+                        (user_id, generation_type)
+                    )
+                else:
+                    cur.execute(
+                        "SELECT COUNT(*) FROM user_generations WHERE user_id = %s AND timestamp::date = CURRENT_DATE",
+                        (user_id,)
+                    )
+                count = cur.fetchone()[0]
+                logger.info(f"User {user_id} has {count} generations of type {generation_type} today")
+                return count
+    except Exception as e:
+        logger.error(f"Error getting user generations: {e}")
+        return 0
+
+def cleanup_old_generations():
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM user_generations WHERE timestamp < CURRENT_DATE - INTERVAL '30 days'")
+                deleted_count = cur.rowcount
+                conn.commit()
+                logger.info(f"Cleaned up {deleted_count} old generation records")
+    except Exception as e:
+        logger.error(f"Error cleaning up old generations: {e}")
