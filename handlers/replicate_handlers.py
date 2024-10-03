@@ -70,7 +70,7 @@ async def upload_images(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 async def get_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     prompt = update.message.text
-    if not prompt.strip().endswith(PHOTOMAKER_TRIGGER_WORD):
+    if not prompt.strip().__contains__(PHOTOMAKER_TRIGGER_WORD):
         prompt = f"{prompt.strip()} {PHOTOMAKER_TRIGGER_WORD}"
         await update.message.reply_text(f"I've added the trigger word '{PHOTOMAKER_TRIGGER_WORD}' to the end of your prompt for better results.")
     
