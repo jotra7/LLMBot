@@ -5,7 +5,7 @@ from telegram.ext import (
     ConversationHandler, CommandHandler, CallbackQueryHandler, ContextTypes, 
     MessageHandler, filters
 )
-from config import DEFAULT_MODEL, DEFAULT_SYSTEM_MESSAGE, ADMIN_USER_IDS
+from config import DEFAULT_MODEL, DEFAULT_SYSTEM_MESSAGE, ADMIN_USER_IDS, SUPPORT_CHAT_ID
 from model_cache import get_models
 from voice_cache import get_voices, get_default_voice
 from database import get_user_conversations, save_conversation
@@ -485,25 +485,27 @@ async def send_bug_report(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     report_message = f"Bug Report from {user.mention_html()}:\n\n{bug_report}"
 
-    for admin_id in ADMIN_USER_IDS:
-        try:
-            if screenshot:
-                await context.bot.send_photo(
-                    chat_id=admin_id,
-                    photo=screenshot.file_id,
-                    caption=report_message,
-                    parse_mode='HTML'
-                )
-            else:
-                await context.bot.send_message(
-                    chat_id=admin_id,
-                    text=report_message,
-                    parse_mode='HTML'
-                )
-        except Exception as e:
-            logger.error(f"Failed to send bug report to admin {admin_id}: {str(e)}")
+    try:
+        if screenshot:
+            await context.bot.send_photo(
+                chat_id=SUPPORT_CHAT_ID,
+                photo=screenshot.file_id,
+                caption=report_message,
+                parse_mode='HTML'
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=SUPPORT_CHAT_ID,
+                text=report_message,
+                parse_mode='HTML'
+            )
+        logger.info(f"Bug report from user {user.id} sent to support channel")
+    except Exception as e:
+        logger.error(f"Failed to send bug report to support channel: {str(e)}")
+        await update.message.reply_text("An error occurred while sending your bug report. Please try again later.")
+        return ConversationHandler.END
 
-    await update.message.reply_text("Thank you for your bug report. It has been sent to the administrators.")
+    await update.message.reply_text("Thank you for your bug report. It has been sent to our support team.")
     return ConversationHandler.END
 
 async def cancel_bug_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
