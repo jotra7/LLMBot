@@ -19,7 +19,7 @@ if "REPLICATE_API_TOKEN" not in os.environ:
 SAN_ANDREAS_MODEL = "levelsio/san-andreas:61cdb2f6a8f234ea9ca3cce88d5454f9b951f93619f5f353a331407f4a05a314"
 PHOTOMAKER_MODEL = "tencentarc/photomaker:ddfc2b08d209f9fa8c1eca692712918bd449f695dabb4a958da31802a9570fe4"
 SAN_ANDREAS_TRIGGER_WORD = "STL"
-PHOTOMAKER_TRIGGER_WORD = "img"
+PHOTOMAKER_TRIGGER_WORD = "IMG"
 
 PHOTOMAKER_STYLES = [
     "(No style)", "Cinematic", "Disney Charactor", "Digital Art", 
