@@ -204,7 +204,13 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     reply_to_message_id=audio_message.message_id
                                 )
 
-                            video_url = await get_video_url_with_retry(completed_generation['id'])
+                            await context.bot.send_message(
+                                chat_id=chat_id,
+                                text=f"Audio for track {index} is ready. Now waiting for video generation (this may take up to 10 minutes)...",
+                                reply_to_message_id=audio_message.message_id
+                            )
+
+                            video_url = await get_video_url_with_extended_retry(completed_generation['id'])
                             if video_url:
                                 try:
                                     await download_video(video_url, video_file_name)
@@ -212,20 +218,20 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                         await context.bot.send_video(
                                             chat_id=chat_id,
                                             video=video_file,
-                                            caption=f"Video for {title}",
+                                            caption=f"Video for {title} (Track {index})",
                                             reply_to_message_id=audio_message.message_id
                                         )
                                 except Exception as video_error:
                                     logger.error(f"Error downloading or sending video for track {index}: {str(video_error)}")
                                     await context.bot.send_message(
                                         chat_id=chat_id,
-                                        text=f"The video for Track {index} is not available at the moment. You can check back later or access it directly from Suno.",
+                                        text=f"There was an issue processing the video for Track {index}. You can try accessing it directly from Suno later.",
                                         reply_to_message_id=audio_message.message_id
                                     )
                             else:
                                 await context.bot.send_message(
                                     chat_id=chat_id,
-                                    text=f"The video for Track {index} is not available at the moment. You can check back later or access it directly from Suno.",
+                                    text=f"The video for Track {index} is not ready yet. It may be available on Suno's platform later.",
                                     reply_to_message_id=audio_message.message_id
                                 )
 
@@ -267,6 +273,18 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=chat_id,
             text=f"You have {remaining_generations} music generations left for today."
         )
+
+async def get_video_url_with_extended_retry(generation_id, max_wait_time=600, check_interval=30):
+    start_time = time.time()
+    while time.time() - start_time < max_wait_time:
+        try:
+            result = await suno_api_request("get", {"id": generation_id}, method='GET')
+            if result and result[0].get('video_url'):
+                return result[0]['video_url']
+        except Exception as e:
+            logger.warning(f"Attempt to get video URL failed: {str(e)}")
+        await asyncio.sleep(check_interval)
+    return None
         
 async def wait_for_initial_details(generation_ids, chat_id, context, message):
     start_time = time.time()
@@ -462,6 +480,10 @@ async def get_tags(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 @queue_task('long_run')
 async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message.text.lower() != 'yes':
+        await update.message.reply_text("Generation cancelled. Please start over with /custom_generate_music")
+        return ConversationHandler.END
+
     user_id = update.effective_user.id
     user_name = update.effective_user.username
     chat_id = update.effective_chat.id
@@ -502,6 +524,13 @@ async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TY
                         tags = completed_generation.get('tags', 'N/A')
                         generation_id = completed_generation['id']
                         
+                        caption = (
+                            f"🎵 Custom Music Generation Complete - Track {index}! 🎵\n\n"
+                            f"Title: {title}\n"
+                            f"Tags: {tags}\n\n"
+                            "Enjoy your generated music!"
+                        )
+
                         audio_file_name = f"{title}_{generation_id[:8]}.mp3"
                         video_file_name = f"{title}_{generation_id[:8]}.mp4"
                         thumb_file_name = f"{generation_id}_artwork.jpg"
@@ -512,12 +541,11 @@ async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TY
                             if completed_generation.get('image_url'):
                                 await download_image(completed_generation['image_url'], thumb_file_name)
 
-                            caption = (
-                                f"🎵 Custom Music Generation Complete - Track {index}! 🎵\n\n"
-                                f"Title: {title}\n"
-                                f"Tags: {tags}\n\n"
-                                "Enjoy your generated music!"
-                            )
+                            MAX_CAPTION_LENGTH = 1024  # Telegram's limit
+                            if len(caption) > MAX_CAPTION_LENGTH:
+                                truncated_caption = caption[:MAX_CAPTION_LENGTH-3] + "..."
+                                full_description = caption
+                                caption = truncated_caption
 
                             with open(audio_file_name, 'rb') as audio_file:
                                 audio_message = await context.bot.send_audio(
@@ -529,8 +557,20 @@ async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TY
                                     reply_to_message_id=status_message.message_id
                                 )
 
-                            # Video generation with retry logic
-                            video_url = await get_video_url_with_retry(generation_id)
+                            if len(caption) > MAX_CAPTION_LENGTH:
+                                await context.bot.send_message(
+                                    chat_id=chat_id,
+                                    text=full_description,
+                                    reply_to_message_id=audio_message.message_id
+                                )
+
+                            await context.bot.send_message(
+                                chat_id=chat_id,
+                                text=f"Audio for track {index} is ready. Now waiting for video generation (this may take up to 10 minutes)...",
+                                reply_to_message_id=audio_message.message_id
+                            )
+
+                            video_url = await get_video_url_with_extended_retry(generation_id)
                             if video_url:
                                 try:
                                     await download_video(video_url, video_file_name)
@@ -545,13 +585,13 @@ async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TY
                                     logger.error(f"Error downloading or sending video for track {index}: {str(video_error)}")
                                     await context.bot.send_message(
                                         chat_id=chat_id,
-                                        text=f"The video for Track {index} is not available at the moment. You can check back later or access it directly from Suno.",
+                                        text=f"There was an issue processing the video for Track {index}. You can try accessing it directly from Suno later.",
                                         reply_to_message_id=audio_message.message_id
                                     )
                             else:
                                 await context.bot.send_message(
                                     chat_id=chat_id,
-                                    text=f"The video for Track {index} is not available at the moment. You can check back later or access it directly from Suno.",
+                                    text=f"The video for Track {index} is not ready yet. It may be available on Suno's platform later.",
                                     reply_to_message_id=audio_message.message_id
                                 )
 
@@ -597,16 +637,7 @@ async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TY
 
     return ConversationHandler.END
 
-async def get_video_url_with_retry(generation_id, max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            result = await suno_api_request("get", {"id": generation_id}, method='GET')
-            if result and result[0].get('video_url'):
-                return result[0]['video_url']
-        except Exception as e:
-            logger.warning(f"Attempt {attempt + 1} to get video URL failed: {str(e)}")
-        await asyncio.sleep(2 ** attempt)  # Exponential backoff
-    return None
+
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
