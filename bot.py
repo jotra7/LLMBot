@@ -1,5 +1,5 @@
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
-from config import TELEGRAM_BOT_TOKEN, ADMIN_USER_IDS
+from config import TELEGRAM_BOT_TOKEN, ADMIN_USER_IDS, REDIS_DB, REDIS_HOST, REDIS_PORT
 from handlers import (
     user_handlers,
     model_handlers,
@@ -20,10 +20,11 @@ from voice_cache import periodic_voice_cache_update
 from performance_metrics import save_performance_data
 from database import cleanup_old_generations
 from datetime import timedelta, time
+import redis
 
 def create_application():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
+    redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
     # Add handlers from user_handlers
     application.add_handler(user_handlers.conv_handler)
     application.add_handler(CommandHandler("help", user_handlers.help_menu))

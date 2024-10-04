@@ -10,3 +10,4 @@ pillow
 aiohttp
 aiofiles
 replicate
+celery
