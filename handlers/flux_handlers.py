@@ -97,26 +97,22 @@ async def flux_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         try:
             loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(None, functools.partial(
-                fal_client.run,
+            handler = await loop.run_in_executor(None, lambda: fal_client.submit(
                 model_id,
                 arguments={
                     "prompt": prompt,
-                    "image_size": "landscape_4_3",
-                    "num_inference_steps": 28,
-                    "guidance_scale": 3.5,
-                    "num_images": 1,
-                    "safety_tolerance": "2" if model_name == "flux-pro" else None,
                 }
             ))
 
-            if result and result.get('images') and len(result['images']) > 0:
+            result = await loop.run_in_executor(None, handler.get)
+
+            if result and 'images' in result and len(result['images']) > 0:
                 image_url = result['images'][0]['url']
                 logger.info(f"Image URL received: {image_url}")
                 await update.message.reply_photo(photo=image_url, caption=f"Generated image using {model_name} for: {prompt}")
                 
                 # Save user generation
-                save_user_generation(user_id, prompt, "flux")
+                save_user_generation(user_id, image_url, "flux")
                 
                 # Calculate and send remaining generations message
                 remaining_generations = MAX_FLUX_GENERATIONS_PER_DAY - (user_generations_today + 1)

@@ -1,5 +1,5 @@
 import psycopg2
-import datetime
+import uuid
 from psycopg2 import sql
 import redis
 import json
@@ -239,9 +239,10 @@ def save_user_generation(user_id: int, prompt: str, generation_type: str):
     try:
         with get_postgres_connection() as conn:
             with conn.cursor() as cur:
+                generation_id = str(uuid.uuid4())  # Generate a unique ID
                 cur.execute(
-                    "INSERT INTO user_generations (user_id, prompt, generation_type, timestamp) VALUES (%s, %s, %s, CURRENT_TIMESTAMP)",
-                    (user_id, prompt, generation_type)
+                    "INSERT INTO user_generations (user_id, prompt, generation_id, generation_type, timestamp) VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)",
+                    (user_id, prompt, generation_id, generation_type)
                 )
             conn.commit()
         logger.info(f"Generation saved for user {user_id} of type {generation_type}")
