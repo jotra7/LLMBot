@@ -35,10 +35,11 @@ ADMIN_USER_IDS = [77446618, 345073552]
 FLUX_MODELS = {
     "flux-realism": "fal-ai/flux-realism",
     "flux-pro": "fal-ai/flux-pro",
+    "flux-pro-1.1": "fal-ai/flux-pro/v1.1",
     "Stable Diffusion V3":"fal-ai/stable-diffusion-v3-medium",
     "Stanle Diffusion Fast":"fal-ai/fast-sdxl"
 }
-DEFAULT_FLUX_MODEL = "flux-realism"
+DEFAULT_FLUX_MODEL = "flux-pro-1.1"
 LEONARDO_AI_KEY = os.getenv("LEONARDO_AI_KEY")
 LEONARDO_API_BASE_URL = "https://cloud.leonardo.ai/api/rest/v1"
 DEFAULT_LEONARDO_MODEL = "6bef9f1b-29cb-40c7-b9df-32b51c1f67d3"  # Leonardo Creative
