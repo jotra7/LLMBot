@@ -12,7 +12,8 @@ import aiohttp
 import os
 import aiofiles
 from utils import openai_client
-
+from telegram.error import BadRequest  
+temporary_message_storage = {}
 
 logger = logging.getLogger(__name__)
 
@@ -30,17 +31,21 @@ async def suno_api_request(endpoint, data=None, method='POST'):
         try:
             if method == 'POST':
                 async with session.post(url, json=data, headers=headers) as response:
-                    logger.info(f"POST request to {url} with data: {data}")
                     response.raise_for_status()
                     json_response = await response.json()
-                    logger.info(f"Response: {json_response}")
+                    # Log only non-sensitive information
+                    log_response = [{k: v for k, v in item.items() if k not in ['lyric', 'prompt', 'image_url', 'audio_url', 'video_url']} for item in json_response] if isinstance(json_response, list) else json_response
+                    logger.info(f"Response received for endpoint {endpoint}")
+                    logger.debug(f"Response details: {log_response}")
                     return json_response
             elif method == 'GET':
                 async with session.get(url, params=data, headers=headers) as response:
-                    logger.info(f"GET request to {url} with params: {data}")
                     response.raise_for_status()
                     json_response = await response.json()
-                    logger.info(f"Response: {json_response}")
+                    # Log only non-sensitive information
+                    log_response = [{k: v for k, v in item.items() if k not in ['lyric']} for item in json_response] if isinstance(json_response, list) else json_response
+                    logger.info(f"Response received for endpoint {endpoint}")
+                    logger.debug(f"Response details: {log_response}")
                     return json_response
         except aiohttp.ClientResponseError as e:
             logger.error(f"API request failed: {e.status} {str(e)}")
@@ -116,10 +121,9 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_name = update.effective_user.username
     chat_id = update.effective_chat.id
 
-    logger.info(f"Suno generation requested by user {user_id} ({user_name})")
+    logger.info(f"Suno generation started for user {user_id} ({user_name})")
 
     user_generations_today = get_user_generations_today(user_id, SUNO_GENERATION_TYPE)
-    logger.info(f"User {user_id} has generated {user_generations_today} times today")
     if user_generations_today >= MAX_GENERATIONS_PER_DAY:
         await context.bot.send_message(
             chat_id=chat_id,
@@ -140,20 +144,16 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if response and isinstance(response, list) and len(response) > 0:
             generation_ids = [song_data['id'] for song_data in response]
             prompt = data['prompt']
-            logger.info(f"Generation IDs for user {user_id}: {', '.join(generation_ids)}")
             
-            initial_messages = []
-            for _ in generation_ids:
-                msg = await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="🎵 Music generation started. Please wait while we create your track..."
-                )
-                initial_messages.append(msg)
+            status_message = await context.bot.send_message(
+                chat_id=chat_id,
+                text="🎵 Music generation in progress. This may take a few minutes..."
+            )
             
             completed_generations = await wait_for_generation(generation_ids, chat_id, context)
             
             if completed_generations:
-                for index, completed_generation in enumerate(completed_generations):
+                for index, completed_generation in enumerate(completed_generations, 1):
                     if completed_generation.get('audio_url'):
                         title = completed_generation.get('title', 'Untitled')
                         tags = completed_generation.get('tags', 'N/A')
@@ -163,31 +163,28 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         lyrics_summary = await generate_lyrics_summary(lyrics) if lyrics else "No lyrics available"
 
                         caption = (
-                            f"🎵 Music Generation Complete! 🎵\n\n"
+                            f"🎵 Music Generation Complete - Track {index}! 🎵\n\n"
                             f"Title: {title}\n"
                             f"Tags: {tags}\n\n"
                             f"Description: {description}\n\n"
                             f"Lyrics Summary: {lyrics_summary}\n\n"
-                            "Enjoy your generated music and video!"
+                            "Enjoy your generated music!"
                         )
 
-                        audio_file_name = f"{title}.mp3"
-                        video_file_name = f"{title}.mp4"
+                        audio_file_name = f"{title}_{completed_generation['id'][:8]}.mp3"
+                        video_file_name = f"{title}_{completed_generation['id'][:8]}.mp4"
                         thumb_file_name = f"{completed_generation['id']}_artwork.jpg"
 
                         try:
-                            # Download audio
                             await download_mp3(completed_generation['audio_url'], audio_file_name)
                             
-                            # Download artwork if available
                             if completed_generation.get('image_url'):
                                 await download_image(completed_generation['image_url'], thumb_file_name)
 
-                            # Send audio file with truncated caption if necessary
                             MAX_CAPTION_LENGTH = 1024  # Telegram's limit
                             if len(caption) > MAX_CAPTION_LENGTH:
                                 truncated_caption = caption[:MAX_CAPTION_LENGTH-3] + "..."
-                                full_description = caption  # Save full description for later
+                                full_description = caption
                                 caption = truncated_caption
 
                             with open(audio_file_name, 'rb') as audio_file:
@@ -197,10 +194,9 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     caption=caption,
                                     title=title,
                                     thumbnail=open(thumb_file_name, 'rb') if os.path.exists(thumb_file_name) else None,
-                                    reply_to_message_id=initial_messages[index].message_id
+                                    reply_to_message_id=status_message.message_id
                                 )
 
-                            # If caption was truncated, send full description as a separate message
                             if len(caption) > MAX_CAPTION_LENGTH:
                                 await context.bot.send_message(
                                     chat_id=chat_id,
@@ -208,57 +204,49 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     reply_to_message_id=audio_message.message_id
                                 )
 
-                            # Check for video with a longer timeout
-                            video_wait_time = 300  # 5 minutes
-                            video_check_interval = 30  # Check every 30 seconds
-                            for _ in range(video_wait_time // video_check_interval):
-                                video_result = await suno_api_request("get", {"id": completed_generation['id']}, method='GET')
-                                if video_result and video_result[0].get('video_url'):
-                                    await download_video(video_result[0]['video_url'], video_file_name)
-                                    if os.path.exists(video_file_name):
-                                        with open(video_file_name, 'rb') as video_file:
-                                            video_message = await context.bot.send_video(
-                                                chat_id=chat_id,
-                                                video=video_file,
-                                                caption=f"Video for {title}",
-                                                reply_to_message_id=audio_message.message_id
-                                            )
-                                        break
-                                await asyncio.sleep(video_check_interval)
+                            video_url = await get_video_url_with_retry(completed_generation['id'])
+                            if video_url:
+                                try:
+                                    await download_video(video_url, video_file_name)
+                                    with open(video_file_name, 'rb') as video_file:
+                                        await context.bot.send_video(
+                                            chat_id=chat_id,
+                                            video=video_file,
+                                            caption=f"Video for {title}",
+                                            reply_to_message_id=audio_message.message_id
+                                        )
+                                except Exception as video_error:
+                                    logger.error(f"Error downloading or sending video for track {index}: {str(video_error)}")
+                                    await context.bot.send_message(
+                                        chat_id=chat_id,
+                                        text=f"The video for Track {index} is not available at the moment. You can check back later or access it directly from Suno.",
+                                        reply_to_message_id=audio_message.message_id
+                                    )
                             else:
-                                logger.info(f"No video generated for {title} after waiting period")
+                                await context.bot.send_message(
+                                    chat_id=chat_id,
+                                    text=f"The video for Track {index} is not available at the moment. You can check back later or access it directly from Suno.",
+                                    reply_to_message_id=audio_message.message_id
+                                )
 
-                            # Delete the initial placeholder message
-                            await context.bot.delete_message(chat_id=chat_id, message_id=initial_messages[index].message_id)
-
+                            save_user_generation(user_id, prompt, SUNO_GENERATION_TYPE)
+                            
                         except Exception as e:
-                            logger.error(f"Error processing generated content: {str(e)}")
-                            await context.bot.edit_message_text(
+                            logger.error(f"Error processing generated content for track {index}: {str(e)}")
+                            await context.bot.send_message(
                                 chat_id=chat_id,
-                                message_id=initial_messages[index].message_id,
-                                text="Sorry, there was an issue processing your generated content. Please try again."
+                                text=f"Sorry, there was an issue processing track {index}. The audio and video might be available directly on Suno's platform.",
+                                reply_to_message_id=status_message.message_id
                             )
                         finally:
-                            # Clean up files
                             for file in [audio_file_name, video_file_name, thumb_file_name]:
                                 if os.path.exists(file):
                                     os.remove(file)
+                                    logger.debug(f"Removed file: {file}")
 
-                        # Save user generation
-                        save_user_generation(user_id, prompt, SUNO_GENERATION_TYPE)
-                    else:
-                        await context.bot.edit_message_text(
-                            chat_id=chat_id,
-                            message_id=initial_messages[index].message_id,
-                            text="Sorry, there was an issue generating your music. Please try again."
-                        )
+                await status_message.edit_text("Music generation completed!")
             else:
-                for msg in initial_messages:
-                    await context.bot.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=msg.message_id,
-                        text="Sorry, no music was generated. Please try again."
-                    )
+                await status_message.edit_text("Sorry, no music was generated. Please try again.")
         else:
             logger.error(f"Suno music generation failed for user {user_id}. Response: {response}")
             await context.bot.send_message(
@@ -273,7 +261,6 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
     finally:
-        # Get updated user's generations today
         user_generations_today = get_user_generations_today(user_id, SUNO_GENERATION_TYPE)
         remaining_generations = max(0, MAX_GENERATIONS_PER_DAY - user_generations_today)
         await context.bot.send_message(
@@ -475,22 +462,14 @@ async def get_tags(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 @queue_task('long_run')
 async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    record_command_usage("suno_custom_song")
-    if update.message.text.lower() != 'yes':
-        await update.message.reply_text("Generation cancelled. Please start over with /custom_generate_music")
-        return ConversationHandler.END
-
     user_id = update.effective_user.id
     user_name = update.effective_user.username
     chat_id = update.effective_chat.id
 
-    logger.info(f"Custom Suno generation requested by user {user_id} ({user_name})")
+    logger.info(f"Custom Suno generation started for user {user_id} ({user_name})")
 
     try:
-        # Check user's daily limit
-        # We'll use an empty string for generation_id here since it's not used in the function
         user_generations_today = get_user_generations_today(user_id, "suno")
-        logger.info(f"User {user_id} has generated {user_generations_today} times today")
         if user_generations_today >= MAX_GENERATIONS_PER_DAY:
             await update.message.reply_text(f"Sorry {user_name}, you have reached your daily limit of {MAX_GENERATIONS_PER_DAY} generations.")
             return ConversationHandler.END
@@ -504,48 +483,42 @@ async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TY
             "wait_audio": False
         }
         
-        logger.info(f"Sending API request for user {user_id} with data: {data}")
         response = await suno_api_request('custom_generate', data=data)
-        logger.info(f"API response for user {user_id}: {response}")
 
         if response and isinstance(response, list) and len(response) > 0:
             generation_ids = [song_data['id'] for song_data in response]
-            logger.info(f"Generation IDs for user {user_id}: {', '.join(generation_ids)}")
             
-            initial_message = await context.bot.send_message(
+            status_message = await context.bot.send_message(
                 chat_id=chat_id,
-                text="🎵 Custom music generation started. Please wait while we create your track..."
+                text="🎵 Custom music generation in progress. This may take a few minutes..."
             )
             
             completed_generations = await wait_for_generation(generation_ids, chat_id, context)
             
-            if completed_generations:
-                for completed_generation in completed_generations:
+            if completed_generations and len(completed_generations) == 2:
+                for index, completed_generation in enumerate(completed_generations, 1):
                     if completed_generation.get('audio_url'):
-                        title = completed_generation.get('title', 'Untitled')
+                        title = completed_generation.get('title', f'Untitled_{index}')
                         tags = completed_generation.get('tags', 'N/A')
                         generation_id = completed_generation['id']
                         
-                        caption = (
-                            f"🎵 Custom Music Generation Complete! 🎵\n\n"
-                            f"Title: {title}\n"
-                            f"Tags: {tags}\n\n"
-                            "Enjoy your generated music and video!"
-                        )
-
-                        audio_file_name = f"{title}.mp3"
-                        video_file_name = f"{title}.mp4"
+                        audio_file_name = f"{title}_{generation_id[:8]}.mp3"
+                        video_file_name = f"{title}_{generation_id[:8]}.mp4"
                         thumb_file_name = f"{generation_id}_artwork.jpg"
 
                         try:
-                            # Download audio
                             await download_mp3(completed_generation['audio_url'], audio_file_name)
                             
-                            # Download artwork if available
                             if completed_generation.get('image_url'):
                                 await download_image(completed_generation['image_url'], thumb_file_name)
 
-                            # Send audio file
+                            caption = (
+                                f"🎵 Custom Music Generation Complete - Track {index}! 🎵\n\n"
+                                f"Title: {title}\n"
+                                f"Tags: {tags}\n\n"
+                                "Enjoy your generated music!"
+                            )
+
                             with open(audio_file_name, 'rb') as audio_file:
                                 audio_message = await context.bot.send_audio(
                                     chat_id=chat_id,
@@ -553,70 +526,63 @@ async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TY
                                     caption=caption,
                                     title=title,
                                     thumbnail=open(thumb_file_name, 'rb') if os.path.exists(thumb_file_name) else None,
-                                    reply_to_message_id=initial_message.message_id
+                                    reply_to_message_id=status_message.message_id
                                 )
 
-                            # Check for video with a longer timeout
-                            video_wait_time = 300  # 5 minutes
-                            video_check_interval = 30  # Check every 30 seconds
-                            for _ in range(video_wait_time // video_check_interval):
-                                video_result = await suno_api_request("get", {"id": generation_id}, method='GET')
-                                if video_result and video_result[0].get('video_url'):
-                                    await download_video(video_result[0]['video_url'], video_file_name)
-                                    if os.path.exists(video_file_name):
-                                        with open(video_file_name, 'rb') as video_file:
-                                            video_message = await context.bot.send_video(
-                                                chat_id=chat_id,
-                                                video=video_file,
-                                                caption=f"Video for {title}",
-                                                reply_to_message_id=audio_message.message_id
-                                            )
-                                        break
-                                await asyncio.sleep(video_check_interval)
+                            # Video generation with retry logic
+                            video_url = await get_video_url_with_retry(generation_id)
+                            if video_url:
+                                try:
+                                    await download_video(video_url, video_file_name)
+                                    with open(video_file_name, 'rb') as video_file:
+                                        await context.bot.send_video(
+                                            chat_id=chat_id,
+                                            video=video_file,
+                                            caption=f"Video for {title} (Track {index})",
+                                            reply_to_message_id=audio_message.message_id
+                                        )
+                                except Exception as video_error:
+                                    logger.error(f"Error downloading or sending video for track {index}: {str(video_error)}")
+                                    await context.bot.send_message(
+                                        chat_id=chat_id,
+                                        text=f"The video for Track {index} is not available at the moment. You can check back later or access it directly from Suno.",
+                                        reply_to_message_id=audio_message.message_id
+                                    )
                             else:
-                                logger.info(f"No video generated for {title} after waiting period")
+                                await context.bot.send_message(
+                                    chat_id=chat_id,
+                                    text=f"The video for Track {index} is not available at the moment. You can check back later or access it directly from Suno.",
+                                    reply_to_message_id=audio_message.message_id
+                                )
 
-                            # Delete the initial placeholder message
-                            await context.bot.delete_message(chat_id=chat_id, message_id=initial_message.message_id)
-
+                            save_user_generation(user_id, data['prompt'], "suno")
+                            
                         except Exception as e:
-                            logger.error(f"Error processing generated content: {str(e)}")
-                            await context.bot.edit_message_text(
+                            logger.error(f"Error processing generated content for track {index}: {str(e)}")
+                            await context.bot.send_message(
                                 chat_id=chat_id,
-                                message_id=initial_message.message_id,
-                                text="Sorry, there was an issue processing your generated content. Please try again."
+                                text=f"Sorry, there was an issue processing track {index}. The audio and video might be available directly on Suno's platform.",
+                                reply_to_message_id=status_message.message_id
                             )
                         finally:
-                            # Clean up files
                             for file in [audio_file_name, video_file_name, thumb_file_name]:
                                 if os.path.exists(file):
                                     os.remove(file)
+                                    logger.debug(f"Removed file: {file}")
 
-                        # Save user generation
-                        save_user_generation(user_id, data['prompt'], "suno")
-                        
-                        # Get updated user's generations today
-                        user_generations_today = get_user_generations_today(user_id, generation_id)
-                        
-                        remaining_generations = max(0, MAX_GENERATIONS_PER_DAY - user_generations_today)
-                        await context.bot.send_message(
-                            chat_id=chat_id,
-                            text=f"You have {remaining_generations} music generations left for today."
-                        )
-                    else:
-                        await context.bot.edit_message_text(
-                            chat_id=chat_id,
-                            message_id=initial_message.message_id,
-                            text="Sorry, there was an issue generating your music. Please try again."
-                        )
-            else:
-                await context.bot.edit_message_text(
+                await status_message.edit_text("Custom music generation completed!")
+
+                user_generations_today = get_user_generations_today(user_id, "suno")
+                remaining_generations = max(0, MAX_GENERATIONS_PER_DAY - user_generations_today)
+                await context.bot.send_message(
                     chat_id=chat_id,
-                    message_id=initial_message.message_id,
-                    text="Sorry, no music was generated. Please try again."
+                    text=f"You have {remaining_generations} music generations left for today."
                 )
+            else:
+                logger.error(f"Unexpected number of completed generations for user {user_id}")
+                await status_message.edit_text("An unexpected error occurred during music generation. Please try again.")
         else:
-            logger.error(f"Suno custom music generation failed for user {user_id}. Response: {response}")
+            logger.error(f"Suno custom music generation failed for user {user_id}")
             await context.bot.send_message(
                 chat_id=chat_id,
                 text="Failed to generate music. Please try again later."
@@ -630,6 +596,17 @@ async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
     return ConversationHandler.END
+
+async def get_video_url_with_retry(generation_id, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            result = await suno_api_request("get", {"id": generation_id}, method='GET')
+            if result and result[0].get('video_url'):
+                return result[0]['video_url']
+        except Exception as e:
+            logger.warning(f"Attempt {attempt + 1} to get video URL failed: {str(e)}")
+        await asyncio.sleep(2 ** attempt)  # Exponential backoff
+    return None
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
