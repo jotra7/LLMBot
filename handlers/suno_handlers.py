@@ -276,16 +276,20 @@ async def generate_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_video_url_with_extended_retry(generation_id, max_wait_time=600, check_interval=30):
     start_time = time.time()
+    last_video_url = None
     while time.time() - start_time < max_wait_time:
         try:
             result = await suno_api_request("get", {"id": generation_id}, method='GET')
             if result and result[0].get('video_url'):
-                return result[0]['video_url']
+                current_video_url = result[0]['video_url']
+                if current_video_url != last_video_url:
+                    return current_video_url
+                last_video_url = current_video_url
         except Exception as e:
             logger.warning(f"Attempt to get video URL failed: {str(e)}")
         await asyncio.sleep(check_interval)
     return None
-        
+
 async def wait_for_initial_details(generation_ids, chat_id, context, message):
     start_time = time.time()
     
@@ -424,7 +428,10 @@ async def start_custom_generation(update: Update, context: ContextTypes.DEFAULT_
     
     logger.info(f"Suno custom generation requested by user {user_id} ({user_name})")
 
-    user_generations_today = get_user_generations_today(user_id,"suno")
+    # Clear any existing conversation data
+    context.user_data.clear()
+
+    user_generations_today = get_user_generations_today(user_id, "suno")
     logger.info(f"User {user_id} has generated {user_generations_today} times today")
     if user_generations_today >= MAX_GENERATIONS_PER_DAY:
         await update.message.reply_text(f"Sorry {user_name}, you have reached your daily limit of {MAX_GENERATIONS_PER_DAY} generations.")
@@ -482,6 +489,7 @@ async def get_tags(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message.text.lower() != 'yes':
         await update.message.reply_text("Generation cancelled. Please start over with /custom_generate_music")
+        context.user_data.clear()  # Clear user data
         return ConversationHandler.END
 
     user_id = update.effective_user.id
@@ -528,6 +536,7 @@ async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TY
                             f"🎵 Custom Music Generation Complete - Track {index}! 🎵\n\n"
                             f"Title: {title}\n"
                             f"Tags: {tags}\n\n"
+                            f"ID: {generation_id}\n\n"
                             "Enjoy your generated music!"
                         )
 
@@ -635,8 +644,10 @@ async def generate_custom_music(update: Update, context: ContextTypes.DEFAULT_TY
             text="An error occurred while generating your music. Please try again later."
         )
 
-    return ConversationHandler.END
+    finally:
+        context.user_data.clear()  # Clear user data after completion or error
 
+    return ConversationHandler.END
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -656,7 +667,11 @@ def setup_custom_music_handler(application):
             TAGS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_tags)],
             CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, generate_custom_music)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CommandHandler("custom_generate_music", start_custom_generation)
+        ],
+        allow_reentry=True
     )
     application.add_handler(conv_handler)
 
