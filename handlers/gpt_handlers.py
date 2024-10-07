@@ -7,6 +7,7 @@ from utils import openai_client
 from performance_metrics import record_command_usage, record_response_time, record_model_usage, record_error
 from queue_system import queue_task
 from database import save_conversation, get_user_conversations
+import openai
 
 logger = logging.getLogger(__name__)
 
@@ -14,18 +15,17 @@ gpt_models = []
 DEFAULT_GPT_MODEL = None
 
 async def fetch_gpt_models():
-    global gpt_models, DEFAULT_GPT_MODEL
     try:
         models = await openai_client.models.list()
-        gpt_models = [model.id for model in models.data if model.id.startswith('gpt')]
+        gpt_models = [
+            model.id for model in models.data 
+            if model.id.startswith('gpt') and 'realtime' not in model.id.lower()
+        ]
         gpt_models.sort(reverse=True)  # Sort models in descending order
-        DEFAULT_GPT_MODEL = gpt_models[0] if gpt_models else "gpt-3.5-turbo"
-        logger.info(f"Fetched GPT models: {gpt_models}")
-        logger.info(f"Set default GPT model to: {DEFAULT_GPT_MODEL}")
+        return gpt_models
     except Exception as e:
         logger.error(f"Error fetching GPT models: {e}")
-        gpt_models = ["gpt-4", "gpt-3.5-turbo"]
-        DEFAULT_GPT_MODEL = "gpt-3.5-turbo"
+        return []
 
 @queue_task('quick')
 async def gpt_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -42,7 +42,17 @@ async def gpt_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     try:
         # Get the user's preferred model or use the default
-        model = context.user_data.get('gpt_model', DEFAULT_GPT_MODEL)
+        model = context.user_data.get('gpt_model') or DEFAULT_GPT_MODEL
+
+        if not model or 'realtime' in model.lower():
+            available_models = await fetch_gpt_models()
+            model = available_models[0] if available_models else None
+            if not model:
+                await update.message.reply_text("No suitable GPT model is available. Please try again later.")
+                return
+            context.user_data['gpt_model'] = model
+
+        logger.info(f"Using model: {model} for user {user_id}")
 
         # Get or initialize GPT conversation history from user context
         gpt_conversation = context.user_data.get('gpt_conversation', [])
@@ -53,13 +63,26 @@ async def gpt_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # Send typing action
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
 
-        response = await openai_client.chat.completions.create(
-            model=model,
-            messages=messages,
-            max_tokens=1000,
-        )
-
-        assistant_response = response.choices[0].message.content
+        try:
+            # Attempt to use chat completions API first
+            response = await openai_client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=1000,
+            )
+            assistant_response = response.choices[0].message.content
+        except openai.BadRequestError as e:
+            if "This is not a chat model" in str(e):
+                # If it's not a chat model, fall back to completions API
+                prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
+                response = await openai_client.completions.create(
+                    model=model,
+                    prompt=prompt,
+                    max_tokens=1000,
+                )
+                assistant_response = response.choices[0].text.strip()
+            else:
+                raise  # Re-raise if it's a different kind of BadRequestError
 
         # Update conversation history
         gpt_conversation.append({"role": "user", "content": user_message})
@@ -78,14 +101,17 @@ async def gpt_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         record_response_time(end_time - start_time)
         record_model_usage(model)
 
+    except openai.AuthenticationError:
+        logger.error(f"Authentication error for user {user_id}")
+        await update.message.reply_text("There was an authentication error. Please contact the administrator.")
+        record_error("gpt_authentication_error")
+    except openai.APIError as e:
+        logger.error(f"OpenAI API error for user {user_id}: {str(e)}")
+        await update.message.reply_text(f"An error occurred with the OpenAI API: {str(e)}")
+        record_error("gpt_openai_api_error")
     except Exception as e:
-        logger.error(f"Error processing GPT message for user {user_id}: {e}")
-        await update.message.reply_text(f"An error occurred: {e}")
-        record_error("gpt_message_processing_error")
-
-    except Exception as e:
-        logger.error(f"Error processing GPT message for user {user_id}: {e}")
-        await update.message.reply_text(f"An error occurred: {e}")
+        logger.error(f"Error processing GPT message for user {user_id}: {str(e)}")
+        await update.message.reply_text(f"An unexpected error occurred: {str(e)}")
         record_error("gpt_message_processing_error")
 
 async def list_gpt_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -98,26 +124,35 @@ async def list_gpt_models(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def set_gpt_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("set_gpt_model")
-    if not gpt_models:
-        await fetch_gpt_models()
-    
-    keyboard = []
-    for model in gpt_models:
-        keyboard.append([InlineKeyboardButton(model, callback_data=f"set_gpt_model:{model}")])
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Please choose a GPT model:", reply_markup=reply_markup)
+    try:
+        gpt_models = await fetch_gpt_models()
+        
+        if not gpt_models:
+            await update.message.reply_text("No suitable GPT models are available at the moment. Please try again later.")
+            return
+
+        keyboard = []
+        for model in gpt_models:
+            keyboard.append([InlineKeyboardButton(model, callback_data=f"set_gpt_model:{model}")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("Please choose a GPT model:", reply_markup=reply_markup)
+    except Exception as e:
+        logger.error(f"Error in set_gpt_model: {e}")
+        await update.message.reply_text("An error occurred while fetching the models. Please try again later.")
 
 async def gpt_model_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     
     model = query.data.split(':')[1]
-    context.user_data['gpt_model'] = model
-    await query.edit_message_text(f"GPT model set to {model}")
-    logger.info(f"User {update.effective_user.id} set GPT model to {model}")
-
-
+    if 'realtime' not in model.lower():
+        context.user_data['gpt_model'] = model
+        await query.edit_message_text(f"GPT model set to {model}")
+        logger.info(f"User {update.effective_user.id} set GPT model to {model}")
+    else:
+        await query.edit_message_text("Invalid model selection. Please choose a non-realtime model.")
+        logger.warning(f"User {update.effective_user.id} attempted to select realtime model: {model}")
 
 async def current_gpt_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("current_gpt_model")
@@ -131,6 +166,6 @@ def setup_gpt_handlers(application):
     application.add_handler(CommandHandler("set_gpt_model", set_gpt_model))
     application.add_handler(CommandHandler("current_gpt_model", current_gpt_model))
     application.add_handler(CallbackQueryHandler(gpt_model_callback, pattern="^set_gpt_model:"))
-    
+
     # Fetch GPT models on startup
     application.job_queue.run_once(lambda _: fetch_gpt_models(), when=1)
