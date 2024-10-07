@@ -161,6 +161,7 @@ def get_help_text(category):
             "🎵 Music Generation\n\n"
             "Make your own song (Limited to 5 per day):\n"
             "• /generate_music <prompt>  - create a song based on your prompt\n"
+            "• /generate_instrumental <prompt>  - create an instrumental song based on your prompt\n"
             "• /custom_generate_music - Start a guided process to create a custom song with lyrics or instrumental music.\n"
 
         ),
