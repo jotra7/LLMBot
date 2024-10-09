@@ -10,3 +10,5 @@ pillow
 aiohttp
 aiofiles
 replicate
+dramatiq
+dramatiq[rabbitmq, watch]

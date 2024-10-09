@@ -22,7 +22,7 @@ def setup_logging():
 
     # Configure root logger
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)  # Set to DEBUG to allow fine-grained control
+   # root_logger.setLevel(logging.DEBUG)  # Set to DEBUG to allow fine-grained control
     root_logger.addHandler(main_handler)
 
     # Set levels for specific loggers

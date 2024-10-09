@@ -14,7 +14,7 @@ from handlers import (
     suno_handlers,
     replicate_handlers
 )
-
+from tasks.all_tasks import generate_image_command_handler
 from model_cache import periodic_cache_update
 from voice_cache import periodic_voice_cache_update
 from performance_metrics import save_performance_data
@@ -35,7 +35,7 @@ def create_application():
     # Add handlers from model_handlers
     application.add_handler(CommandHandler("list_models", model_handlers.list_models))
     application.add_handler(CommandHandler("set_model", model_handlers.set_model))
-    application.add_handler(CommandHandler("curren_tmodel", model_handlers.current_model))
+    application.add_handler(CommandHandler("current_model", model_handlers.current_model))
 
     # Add handlers from voice_handlers
     application.add_handler(CommandHandler("tts", voice_handlers.tts_command))
@@ -45,10 +45,11 @@ def create_application():
     application.add_handler(voice_handlers.voice_addition_handler)
     application.add_handler(CommandHandler("delete_custom_voice", voice_handlers.delete_custom_voice))
 
-
     # Add handlers from image_handlers
     application.add_handler(CommandHandler("generate_image", image_handlers.generate_image))
     application.add_handler(CommandHandler("analyze_image", image_handlers.analyze_image))
+    # Add the /gen_img handler for new image task functionality
+    application.add_handler(CommandHandler("gen_img", generate_image_command_handler))
 
     # Add handlers from video_handlers
     application.add_handler(CommandHandler("video", video_handlers.generate_text_to_video))
@@ -76,8 +77,8 @@ def create_application():
     # Add GPT handlers
     gpt_handlers.setup_gpt_handlers(application)
     # Add Suno handlers
-    suno_handlers.setup_suno_handlers(application)  # Add this line
-    suno_handlers.setup_custom_music_handler(application)  
+    suno_handlers.setup_suno_handlers(application)
+    suno_handlers.setup_custom_music_handler(application)
     # Add replicate Handlers
     replicate_handlers.setup_replicate_handlers(application)
 
@@ -91,20 +92,18 @@ def create_application():
     application.add_error_handler(message_handlers.error_handler)
 
     # Add callback query handlers
-    # Add callback query handlers
     application.add_handler(CallbackQueryHandler(voice_handlers.voice_button_callback, pattern=r"^voice_"))
     application.add_handler(CallbackQueryHandler(flux_handlers.flux_model_callback, pattern=r"^set_flux_model:"))
     application.add_handler(CallbackQueryHandler(leonardo_handlers.leonardo_model_callback, pattern="^leo_model:"))
-    application.add_handler(CallbackQueryHandler(model_handlers.button_callback))  # This should be the last one
+    application.add_handler(CallbackQueryHandler(model_handlers.button_callback))
     application.add_handler(CommandHandler("bug", user_handlers.bug_command))  # Correct way to add bug_command
 
-    
     return application
 
 async def initialize_bot():
     """Initialize and return the bot application."""
     application = create_application()
-    
+
     # Schedule periodic tasks
     application.job_queue.run_repeating(periodic_cache_update, interval=timedelta(days=1), first=10)
     application.job_queue.run_repeating(periodic_voice_cache_update, interval=timedelta(days=1), first=10)
@@ -115,8 +114,5 @@ async def initialize_bot():
 
     # Initialize the application
     await application.initialize()
-    
 
     return application
-
-# Keep any other existing functions in bot.py if needed
