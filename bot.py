@@ -4,7 +4,6 @@ from handlers import (
     user_handlers,
     model_handlers,
     voice_handlers,
-    image_handlers,
     video_handlers,
     admin_handlers,
     flux_handlers,
@@ -15,6 +14,7 @@ from handlers import (
     replicate_handlers
 )
 
+from dramatiq_handlers import suno_generate_music_dramatiq, suno_generate_instrumental_dramatiq
 from model_cache import periodic_cache_update
 from voice_cache import periodic_voice_cache_update
 from performance_metrics import save_performance_data
@@ -48,11 +48,11 @@ def create_application():
     application.add_handler(CommandHandler("delete_custom_voice", voice_handlers.delete_custom_voice))
 
     # Add handlers from image_handlers
-    application.add_handler(CommandHandler("generate_image", image_handlers.generate_image))
-    application.add_handler(CommandHandler("analyze_image", image_handlers.analyze_image))
+    #application.add_handler(CommandHandler("generate_image", image_handlers.generate_image))
+    #application.add_handler(CommandHandler("analyze_image", image_handlers.analyze_image))
     # Add the /gen_img handler for new image task functionality
-    application.add_handler(CommandHandler("gen_img", generate_image_dramatiq))
-    application.add_handler(CommandHandler("ana_img", analyze_image_dramatiq))
+    application.add_handler(CommandHandler("generate_image", generate_image_dramatiq))
+    application.add_handler(CommandHandler("analyze_image", analyze_image_dramatiq))
     # Add handlers from video_handlers
     application.add_handler(CommandHandler("video", video_handlers.generate_text_to_video))
     application.add_handler(CommandHandler("img2video", video_handlers.img2video_command))
@@ -79,6 +79,9 @@ def create_application():
     # Add GPT handlers
     gpt_handlers.setup_gpt_handlers(application)
     # Add Suno handlers
+    application.add_handler(CommandHandler("generate_music", suno_generate_music_dramatiq))
+    application.add_handler(CommandHandler("generate_instrumental", suno_generate_instrumental_dramatiq))
+
     suno_handlers.setup_suno_handlers(application)
     suno_handlers.setup_custom_music_handler(application)
     # Add replicate Handlers

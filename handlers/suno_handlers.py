@@ -1010,8 +1010,8 @@ async def generate_instrumental(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 def setup_suno_handlers(application):
-    application.add_handler(CommandHandler("generate_music", generate_music))
-    application.add_handler(CommandHandler("generate_instrumental", generate_instrumental))
+    application.add_handler(CommandHandler("generate_music_old", generate_music))
+    application.add_handler(CommandHandler("generate_instrumental_old", generate_instrumental))
     # Remove the direct handler for custom_generate_music
     # application.add_handler(CommandHandler("custom_generate_music", generate_custom_music))
     application.add_handler(CommandHandler("get_music_info", get_music_info))
