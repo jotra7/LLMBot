@@ -36,46 +36,67 @@ def generate_flux_task(prompt: str, user_id: int, chat_id: int):
             return
 
         # Initialize Flux generation
-        progress_message = loop.run_until_complete(bot.send_message(chat_id=chat_id, text="⚙️ Initializing Flux generation..."))
+        progress_message = loop.run_until_complete(bot.send_message(chat_id=chat_id, text="🎨 Initializing Flux generation..."))
         
-        # Call the Fal.ai client to generate the output (adjusted to use subscribe_async)
-        model_id = 'fal-ai/flux-pro/v1.1'  # Default to flux-pro-1.1 as specified
+        model_name = DEFAULT_FLUX_MODEL
+        model_id = FLUX_MODELS.get(model_name, 'fal-ai/flux-pro/v1.1')
 
-        async def generate_flux():
-            def on_queue_update(update):
-                if isinstance(update, fal_client.InProgress):
-                    for log in update.logs:
-                        logger.info(f"Flux generation progress: {log['message']}")
+        # Async progress updater
+        async def update_progress():
+            steps = [
+                "Analyzing prompt", "Preparing canvas", "Sketching outlines", 
+                "Adding details", "Applying colors", "Refining image", 
+                "Enhancing details", "Adjusting lighting", "Finalizing composition"
+            ]
+            step_index = 0
+            dots = 0
+            while True:
+                step = steps[step_index % len(steps)]
+                await progress_message.edit_text(f"🎨 {step}{'.' * dots}")
+                dots = (dots + 1) % 4
+                step_index += 1
+                await asyncio.sleep(2)
 
-            result = await fal_client.submit_async(
+        progress_task = asyncio.ensure_future(update_progress())
+
+        try:
+            # Submit task to Fal.ai
+            handler = loop.run_until_complete(loop.run_in_executor(None, lambda: fal_client.submit(
                 model_id,
                 arguments={
                     "prompt": prompt,
-                },
-                on_queue_update=on_queue_update,
-            )
-            return result
+                }
+            )))
 
-        handler = loop.run_until_complete(generate_flux())
-        logger.info(f"Flux API response for user {user_id}: {handler}")
-        
-        # Assuming handler contains a URL to the generated image
-        if handler and 'image' in handler and 'url' in handler['image']:
-            image_url = handler['image']['url']
-            loop.run_until_complete(bot.send_photo(chat_id=chat_id, photo=image_url, caption="Here is your Flux-generated image!"))
-        else:
-            raise ValueError("Unexpected response format from Flux API")
+            result = loop.run_until_complete(loop.run_in_executor(None, handler.get))
 
-        # Save the generation to the database
-        save_user_generation(user_id, prompt, "flux")
-        
-    except Exception as e:
-        logger.error(f"Flux generation error for user {user_id}: {str(e)}")
-        record_error("flux_generation_error")
-        loop.run_until_complete(bot.send_message(chat_id=chat_id, text=f"An error occurred during Flux generation: {str(e)}"))
-    
-    finally:
+            if result and 'images' in result and len(result['images']) > 0:
+                image_url = result['images'][0]['url']
+                logger.info(f"Image URL received: {image_url}")
+                loop.run_until_complete(bot.send_photo(chat_id=chat_id, photo=image_url, caption=f"Generated image using {model_name} for: {prompt}"))
+                
+                # Save user generation
+                save_user_generation(user_id, prompt, "flux")
+                
+                # Calculate and send remaining generations message
+                remaining_generations = max_generations - (user_generations_today + 1)
+                loop.run_until_complete(bot.send_message(chat_id=chat_id, text=f"You have {remaining_generations} Flux image generations left for today."))
+            else:
+                logger.error("No image URL in the result")
+                loop.run_until_complete(bot.send_message(chat_id=chat_id, text="Sorry, I couldn't generate an image. Please try again."))
+        finally:
+            progress_task.cancel()
+            loop.run_until_complete(progress_message.delete())
+
         end_time = time.time()
-        record_response_time(end_time - start_time)
-        logger.info(f"Flux generation completed in {end_time - start_time:.2f} seconds for user {user_id}")
+        response_time = end_time - start_time
+        record_response_time(response_time)
+        logger.info(f"Flux image generated using {model_name} in {response_time:.2f} seconds for user {user_id}")
+
+    except Exception as e:
+        logger.error(f"Flux image generation error for user {user_id}: {str(e)}")
+        loop.run_until_complete(bot.send_message(chat_id=chat_id, text=f"An error occurred during Flux generation: {str(e)}"))
+        record_error("flux_generation_error")
+    finally:
         loop.close()
+        logger.info(f"Flux command execution completed for user {user_id}")
