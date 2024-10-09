@@ -30,5 +30,9 @@ def setup_logging():
 
 if __name__ == "__main__":
     setup_logging()
+    
+    # Set sys.argv for Dramatiq modules to load
     sys.argv = ["dramatiq", "dramatiq_tasks.image_tasks", "dramatiq_tasks.suno_tasks", "dramatiq_tasks.flux_tasks"]
+    
+    # Call the main function to start Dramatiq workers
     main()
