@@ -7,6 +7,7 @@ from performance_metrics import record_command_usage
 from database import get_user_generations_today
 from config import MAX_GENERATIONS_PER_DAY
 from dramatiq_tasks.image_tasks import generate_image_task, analyze_image_task
+import base64
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +63,11 @@ async def analyze_image_dramatiq(update: Update, context: ContextTypes.DEFAULT_T
         file = await context.bot.get_file(photo.file_id)
         image_bytes = await file.download_as_bytearray()
 
+        # Convert image bytes to base64 string
+        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+
         # Enqueue the task
-        analyze_image_task.send(bytes(image_bytes), user_id, update.effective_chat.id)
+        analyze_image_task.send(image_base64, user_id, update.effective_chat.id)
 
         await progress_message.edit_text("Your image analysis task has been queued. You'll be notified when it's ready.")
 

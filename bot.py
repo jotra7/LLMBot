@@ -15,7 +15,6 @@ from handlers import (
     replicate_handlers
 )
 
-from task_manager import check_pending_tasks
 from model_cache import periodic_cache_update
 from voice_cache import periodic_voice_cache_update
 from performance_metrics import save_performance_data
@@ -114,7 +113,6 @@ async def initialize_bot():
     application.job_queue.run_once(leonardo_handlers.update_leonardo_model_cache, when=0)
     application.job_queue.run_repeating(leonardo_handlers.update_leonardo_model_cache, interval=timedelta(days=1), first=timedelta(days=1))
     application.job_queue.run_daily(lambda _: cleanup_old_generations(), time=time(hour=0, minute=0))
-    application.job_queue.run_repeating(check_pending_tasks, interval=10)
 
 
     # Initialize the application
