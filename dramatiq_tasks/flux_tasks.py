@@ -38,14 +38,25 @@ def generate_flux_task(prompt: str, user_id: int, chat_id: int):
         # Initialize Flux generation
         progress_message = loop.run_until_complete(bot.send_message(chat_id=chat_id, text="⚙️ Initializing Flux generation..."))
         
-        # Call the Fal.ai client to generate the output (adjusted to match flux_handlers usage)
-        model_id = DEFAULT_FLUX_MODEL
-        handler = loop.run_until_complete(loop.run_in_executor(None, lambda: fal_client.submit(
-            model_id,
-            arguments={
-                "prompt": prompt,
-            }
-        )))
+        # Call the Fal.ai client to generate the output (adjusted to use subscribe_async)
+        model_id = 'fal-ai/flux-pro/v1.1'  # Default to flux-pro-1.1 as specified
+
+        async def generate_flux():
+            def on_queue_update(update):
+                if isinstance(update, fal_client.InProgress):
+                    for log in update.logs:
+                        logger.info(f"Flux generation progress: {log['message']}")
+
+            result = await fal_client.subscribe_async(
+                model_id,
+                arguments={
+                    "prompt": prompt,
+                },
+                on_queue_update=on_queue_update,
+            )
+            return result
+
+        handler = loop.run_until_complete(generate_flux())
         logger.info(f"Flux API response for user {user_id}: {handler}")
         
         # Assuming handler contains a URL to the generated image
