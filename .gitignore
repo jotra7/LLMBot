@@ -5,3 +5,4 @@ venv
 *.log
 *.db
 ca
+start_bot.sh
