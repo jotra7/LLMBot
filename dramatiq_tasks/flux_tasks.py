@@ -47,7 +47,7 @@ def generate_flux_task(prompt: str, user_id: int, chat_id: int):
                     for log in update.logs:
                         logger.info(f"Flux generation progress: {log['message']}")
 
-            result = await fal_client.subscribe_async(
+            result = await fal_client.submit_async(
                 model_id,
                 arguments={
                     "prompt": prompt,
