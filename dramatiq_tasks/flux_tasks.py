@@ -22,6 +22,9 @@ def generate_flux_task(prompt: str, user_id: int, chat_id: int):
     
     logger.info(f"Flux generation task started for user {user_id} with prompt: '{prompt}'")
     
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
     try:
         # Check daily generation limits
         user_generations_today = get_user_generations_today(user_id, "flux")
@@ -29,8 +32,6 @@ def generate_flux_task(prompt: str, user_id: int, chat_id: int):
         
         max_generations = int(MAX_FLUX_GENERATIONS_PER_DAY)
         if user_generations_today >= max_generations:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
             loop.run_until_complete(bot.send_message(chat_id=chat_id, text=f"Sorry, you have reached your daily limit of {max_generations} Flux generations."))
             return
 
