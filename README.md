@@ -32,7 +32,8 @@ This project implements a feature-rich Telegram bot powered by Anthropic's langu
 - An Eleven Labs API key
 - A Fal.ai API key
 - A Leonardo.ai API key
-
+- RabbitMQ installed and running on the local server
+      
 ## Installation
 
 1. Clone this repository:
@@ -60,7 +61,21 @@ This project implements a feature-rich Telegram bot powered by Anthropic's langu
    POSTGRES_HOST=localhost
    POSTGRES_PORT=5432
    ```
-
+4. Install RabbitMQ on your local server:
+      - On Debian-based systems:
+      ```bash
+      sudo apt-get update
+      sudo apt-get install rabbitmq-server
+      ```
+      - On RedHat-based systems:
+      ```bash
+      sudo yum update
+      sudo yum install rabbitmq-server
+      ```
+      - Start the RabbitMQ service:
+      ```bash
+      sudo systemctl start rabbitmq-server
+      sudo systemctl enable rabbitmq-server
 ## Database Setup
 
 1. Ensure PostgreSQL is installed and running on your system.
