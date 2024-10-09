@@ -14,12 +14,15 @@ from handlers import (
     suno_handlers,
     replicate_handlers
 )
-from tasks.all_tasks import generate_image_command_handler
+
+from task_manager import check_pending_tasks
 from model_cache import periodic_cache_update
 from voice_cache import periodic_voice_cache_update
 from performance_metrics import save_performance_data
 from database import cleanup_old_generations
 from datetime import timedelta, time
+from dramatiq_handlers import generate_image_dramatiq, analyze_image_dramatiq
+
 
 def create_application():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
@@ -49,8 +52,8 @@ def create_application():
     application.add_handler(CommandHandler("generate_image", image_handlers.generate_image))
     application.add_handler(CommandHandler("analyze_image", image_handlers.analyze_image))
     # Add the /gen_img handler for new image task functionality
-    application.add_handler(CommandHandler("gen_img", generate_image_command_handler))
-
+    application.add_handler(CommandHandler("gen_img", generate_image_dramatiq))
+    application.add_handler(CommandHandler("ana_img", analyze_image_dramatiq))
     # Add handlers from video_handlers
     application.add_handler(CommandHandler("video", video_handlers.generate_text_to_video))
     application.add_handler(CommandHandler("img2video", video_handlers.img2video_command))
@@ -111,6 +114,8 @@ async def initialize_bot():
     application.job_queue.run_once(leonardo_handlers.update_leonardo_model_cache, when=0)
     application.job_queue.run_repeating(leonardo_handlers.update_leonardo_model_cache, interval=timedelta(days=1), first=timedelta(days=1))
     application.job_queue.run_daily(lambda _: cleanup_old_generations(), time=time(hour=0, minute=0))
+    application.job_queue.run_repeating(check_pending_tasks, interval=10)
+
 
     # Initialize the application
     await application.initialize()
