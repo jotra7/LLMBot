@@ -40,12 +40,17 @@ def generate_flux_task(prompt: str, user_id: int, chat_id: int):
         
         # Call the Fal.ai client to generate the output (adjusted to match flux_handlers usage)
         model_id = DEFAULT_FLUX_MODEL
-        result = fal_client.create_image(prompt, model=model_id)
-        logger.info(f"Flux API response for user {user_id}: {result}")
+        handler = loop.run_until_complete(loop.run_in_executor(None, lambda: fal_client.submit(
+            model_id,
+            arguments={
+                "prompt": prompt,
+            }
+        )))
+        logger.info(f"Flux API response for user {user_id}: {handler}")
         
-        # Assuming result contains a URL to the generated image
-        if result and 'image' in result and 'url' in result['image']:
-            image_url = result['image']['url']
+        # Assuming handler contains a URL to the generated image
+        if handler and 'image' in handler and 'url' in handler['image']:
+            image_url = handler['image']['url']
             loop.run_until_complete(bot.send_photo(chat_id=chat_id, photo=image_url, caption="Here is your Flux-generated image!"))
         else:
             raise ValueError("Unexpected response format from Flux API")
