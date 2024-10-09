@@ -30,5 +30,5 @@ def setup_logging():
 
 if __name__ == "__main__":
     setup_logging()
-    sys.argv = ["dramatiq", "dramatiq_tasks.image_tasks", "dramatiq_tasks.suno_tasks"]
+    sys.argv = ["dramatiq", "dramatiq_tasks.image_tasks", "dramatiq_tasks.suno_tasks", "dramatiq_tasks.flux_tasks"]
     main()
