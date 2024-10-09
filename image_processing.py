@@ -32,3 +32,27 @@ async def analyze_image_openai(image_bytes):
         max_tokens=300,
     )
     return response.choices[0].message.content
+
+
+async def analyze_image_openai_bytes(image_bytes: bytes):
+    # New function for Dramatiq task
+    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+    response = await openai_client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "What's in this image? Provide a detailed description."},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}",
+                        },
+                    },
+                ],
+            }
+        ],
+        max_tokens=300,
+    )
+    return response.choices[0].message.content

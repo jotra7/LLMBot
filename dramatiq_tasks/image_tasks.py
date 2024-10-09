@@ -5,8 +5,8 @@ import logging
 from performance_metrics import record_response_time, record_error
 from image_processing import generate_image_openai, analyze_image_openai
 from database import save_conversation, save_user_generation
+from image_processing import analyze_image_openai_bytes  # Import the new function
 import time
-import io
 import asyncio
 import base64
 from telegram import Bot
@@ -53,8 +53,8 @@ def analyze_image_task(image_base64: str, user_id: int, chat_id: int):
         
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        logger.debug("Calling analyze_image_openai function")
-        analysis = loop.run_until_complete(analyze_image_openai(io.BytesIO(image_bytes)))
+        logger.debug("Calling analyze_image_openai_bytes function")
+        analysis = loop.run_until_complete(analyze_image_openai_bytes(image_bytes))
         loop.close()
         
         end_time = time.time()
