@@ -14,13 +14,12 @@ from handlers import (
     replicate_handlers
 )
 
-from dramatiq_handlers import suno_generate_music_dramatiq, suno_generate_instrumental_dramatiq
 from model_cache import periodic_cache_update
 from voice_cache import periodic_voice_cache_update
 from performance_metrics import save_performance_data
 from database import cleanup_old_generations
 from datetime import timedelta, time
-from dramatiq_handlers import generate_image_dramatiq, analyze_image_dramatiq, generate_flux_dramatiq
+from dramatiq_handlers import generate_image_dramatiq, analyze_image_dramatiq, fluxnew_command, suno_generate_instrumental_dramatiq, suno_generate_music_dramatiq
 
 
 def create_application():
@@ -55,7 +54,7 @@ def create_application():
     application.add_handler(CommandHandler("analyze_image", analyze_image_dramatiq))
     application.add_handler(CommandHandler("generate_music", suno_generate_music_dramatiq))
     application.add_handler(CommandHandler("generate_instrumental", suno_generate_instrumental_dramatiq))
-    application.add_handler(CommandHandler('newflux', generate_flux_dramatiq))
+    application.add_handler(CommandHandler('flux', fluxnew_command))
    
     # Add handlers from video_handlers
     application.add_handler(CommandHandler("video", video_handlers.generate_text_to_video))
