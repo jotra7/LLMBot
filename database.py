@@ -108,6 +108,11 @@ def save_conversation(user_id: int, user_message: str, bot_response: str, model_
         logger.info(f"Conversation saved and counts updated for user {user_id} using {model_type} model")
     except Exception as e:
         logger.error(f"Error saving conversation: {e}")
+def get_all_users() -> List[int]:
+    with get_postgres_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users")
+            return [row[0] for row in cur.fetchall()]
 
 def get_user_generations_today(user_id: int, generation_type: str) -> int:
     try:
@@ -158,10 +163,126 @@ def save_user_model(user_id: int, model_type: str, model_name: str) -> None:
     except Exception as e:
         logger.error(f"Database error in save_user_model: {e}")
 
+def clear_user_conversations(user_id: int):
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM conversations WHERE user_id = %s",
+                    (user_id,)
+                )
+            conn.commit()
+        logger.info(f"Cleared all conversations for user {user_id}")
+    except Exception as e:
+        logger.error(f"Error clearing conversations for user {user_id}: {e}")
+
+
 # Redis operations
 def save_user_session(user_id: int, session_data: dict):
     session_key = f"user:{user_id}:session"
     redis_client.setex(session_key, timedelta(hours=1), json.dumps(session_data))
+
+def get_user_stats() -> Dict[str, int]:
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                query = """
+                SELECT 
+                    COUNT(DISTINCT id) as total_users,
+                    COALESCE(SUM(total_messages), 0) as total_messages,
+                    COALESCE(SUM(total_claude_messages), 0) as total_claude_messages,
+                    COALESCE(SUM(total_gpt_messages), 0) as total_gpt_messages,
+                    COUNT(DISTINCT CASE WHEN last_interaction > NOW() - INTERVAL '24 hours' THEN id END) as active_users_24h
+                FROM users
+                """
+                cur.execute(query)
+                result = cur.fetchone()
+                stats = {
+                    "total_users": result[0],
+                    "total_messages": result[1],
+                    "total_claude_messages": result[2],
+                    "total_gpt_messages": result[3],
+                    "active_users_24h": result[4]
+                }
+        logger.info(f"Retrieved user stats: {stats}")
+        return stats
+    except Exception as e:
+        logger.error(f"Error retrieving user stats: {e}")
+        return {
+            "total_users": 0,
+            "total_messages": 0,
+            "total_claude_messages": 0,
+            "total_gpt_messages": 0,
+            "active_users_24h": 0
+        }
+def ban_user(user_id: int) -> bool:
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute('INSERT INTO banned_users (user_id) VALUES (%s) ON CONFLICT (user_id) DO NOTHING', (user_id,))
+                affected = cur.rowcount
+            conn.commit()
+        return affected > 0
+    except Exception as e:
+        logger.error(f"Error banning user: {e}")
+        return False
+
+def unban_user(user_id: int) -> bool:
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute('DELETE FROM banned_users WHERE user_id = %s', (user_id,))
+                affected = cur.rowcount
+            conn.commit()
+        return affected > 0
+    except Exception as e:
+        logger.error(f"Error unbanning user: {e}")
+        return False
+
+def is_user_banned(user_id: int) -> bool:
+    with get_postgres_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute('SELECT 1 FROM banned_users WHERE user_id = %s', (user_id,))
+            return cur.fetchone() is not None
+        
+def get_active_users(days: int = 7) -> List[Dict[str, any]]:
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, first_interaction, last_interaction, 
+                           total_messages, total_claude_messages, total_gpt_messages
+                    FROM users
+                    WHERE last_interaction > NOW() - (%s || ' days')::INTERVAL
+                    ORDER BY last_interaction DESC
+                """, (str(days),))
+                active_users = [
+                    {
+                        "id": row[0],
+                        "first_interaction": row[1],
+                        "last_interaction": row[2],
+                        "total_messages": row[3],
+                        "total_claude_messages": row[4],
+                        "total_gpt_messages": row[5]
+                    }
+                    for row in cur.fetchall()
+                ]
+        logger.info(f"Retrieved {len(active_users)} active users in the last {days} days")
+        return active_users
+    except Exception as e:
+        logger.error(f"Error retrieving active users: {e}")
+        return []    
+
+def cleanup_old_generations():
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM user_generations WHERE timestamp < CURRENT_DATE - INTERVAL '30 days'")
+                deleted_count = cur.rowcount
+                conn.commit()
+                logger.info(f"Cleaned up {deleted_count} old generation records")
+    except Exception as e:
+        logger.error(f"Error cleaning up old generations: {e}")
 
 def get_user_session(user_id: int) -> dict:
     session_key = f"user:{user_id}:session"
@@ -210,6 +331,19 @@ async def update_leonardo_model_cache(context=None):
         logger.info(f"Leonardo model cache updated successfully. Models: {leonardo_model_cache}")
     except Exception as e:
         logger.error(f"Error updating Leonardo model cache: {str(e)}")
-
+def get_user_conversations(user_id: int, limit: int = 5, model_type: Optional[str] = None) -> List[Dict[str, str]]:
+    with get_postgres_connection() as conn:
+        with conn.cursor() as cur:
+            if model_type:
+                cur.execute(
+                    "SELECT user_message, bot_response FROM conversations WHERE user_id = %s AND model_type = %s ORDER BY timestamp DESC LIMIT %s",
+                    (user_id, model_type, limit)
+                )
+            else:
+                cur.execute(
+                    "SELECT user_message, bot_response FROM conversations WHERE user_id = %s ORDER BY timestamp DESC LIMIT %s",
+                    (user_id, limit)
+                )
+            return [{'user_message': row[0], 'bot_response': row[1]} for row in cur.fetchall()]
 # Initialize the database
 init_db()
