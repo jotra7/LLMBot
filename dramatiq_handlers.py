@@ -13,7 +13,7 @@ from dramatiq_tasks.flux_tasks import generate_flux_image_task
 from config import *
 
 logger = logging.getLogger(__name__)
-
+logging.getLogger("httpx").setLevel(logging.WARNING)
 async def analyze_image_dramatiq(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("analyze_image_dramatiq")
     if update.message.photo:
@@ -205,8 +205,6 @@ async def fluxnew_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         # Enqueue the task
         generate_flux_image_task.send(prompt, model_id, user_id, chat_id, progress_message.message_id)
-
-        await progress_message.edit_text("Your Flux image generation task has been queued. You'll be notified when it's ready.")
 
     except Exception as e:
         logger.error(f"Dramatiq Flux image generation error for user {user_id}: {str(e)}")
