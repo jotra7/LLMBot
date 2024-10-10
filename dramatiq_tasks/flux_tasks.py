@@ -7,7 +7,7 @@ import time
 from telegram import Bot
 from config import TELEGRAM_BOT_TOKEN, FLUX_MODELS, DEFAULT_FLUX_MODEL, MAX_FLUX_GENERATIONS_PER_DAY
 from performance_metrics import record_command_usage, record_response_time, record_error
-from database import get_user_generations_today, save_user_generation, get_user_flux_model, save_user_flux_model
+from database import get_user_generations_today, save_user_generation, get_user_model, save_user_model
 import fal_client
 
 logger = logging.getLogger(__name__)
@@ -39,10 +39,10 @@ def generate_flux_task(prompt: str, user_id: int, chat_id: int):
         progress_message = loop.run_until_complete(bot.send_message(chat_id=chat_id, text="🎨 Initializing Flux generation..."))
         
         # Retrieve the user's model preference or use the default model
-        model_name = get_user_flux_model(user_id)
+        model_name = get_user_model(user_id, "flux_model")
         if not model_name:
             model_name = DEFAULT_FLUX_MODEL
-            save_user_flux_model(user_id, model_name)  # Save the default model as the user's preference
+            save_user_model(user_id, "flux_model", model_name)  # Save the default model as the user's preference
         model_id = FLUX_MODELS.get(model_name, 'fal-ai/flux-pro/v1.1')
 
         # Async progress updater
