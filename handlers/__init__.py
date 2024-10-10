@@ -8,7 +8,6 @@ from . import flux_handlers
 from . import message_handlers
 from . import leonardo_handlers
 from . import gpt_handlers
-from . import suno_handlers
 from . import replicate_handlers
 
 # Export all the handlers

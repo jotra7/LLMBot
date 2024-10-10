@@ -10,7 +10,6 @@ from handlers import (
     message_handlers,
     leonardo_handlers,
     gpt_handlers,
-    suno_handlers,
     replicate_handlers
 )
 
