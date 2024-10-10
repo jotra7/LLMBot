@@ -225,5 +225,5 @@ def setup_flux_handlers(application):
     application.add_handler(CommandHandler("list_flux_models", list_flux_models))
     application.add_handler(CommandHandler("set_flux_model", set_flux_model))
     application.add_handler(CommandHandler("current_flux_model", current_flux_model))
-    application.add_handler(CommandHandler("flux", flux_command))
+    application.add_handler(CommandHandler("oldflux", flux_command))
     application.add_handler(CommandHandler("remove_bg", remove_background))

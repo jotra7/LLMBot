@@ -2,62 +2,101 @@
 
 import dramatiq
 import logging
-import asyncio
 import time
-from telegram import Bot
-from config import TELEGRAM_BOT_TOKEN, FLUX_MODELS, DEFAULT_FLUX_MODEL, MAX_FLUX_GENERATIONS_PER_DAY
-from performance_metrics import record_command_usage, record_response_time, record_error
-from database import get_user_generations_today, save_user_generation
+from performance_metrics import record_response_time, record_error
+from database import save_user_generation, get_user_generations_today
 import fal_client
+from telegram import Bot
+from config import TELEGRAM_BOT_TOKEN, MAX_FLUX_GENERATIONS_PER_DAY, FLUX_MODELS
+import asyncio
 
 logger = logging.getLogger(__name__)
 
 @dramatiq.actor
-def generate_flux_task(prompt: str, user_id: int, chat_id: int):
-    """
-    Handles the Flux model generation task asynchronously.
-    """
-    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+def generate_flux_image_task(prompt: str, model_id: str, user_id: int, chat_id: int, progress_message_id: int):
     start_time = time.time()
-    
-    logger.info(f"Flux generation task started for user {user_id} with prompt: '{prompt}'")
-    
     try:
-        # Check daily generation limits
-        user_generations_today = get_user_generations_today(user_id, "flux")
-        logger.info(f"User {user_id} has generated {user_generations_today} Flux generations today")
+        logger.info(f"Starting Flux image generation for user {user_id} with prompt: '{prompt}'")
         
-        max_generations = int(MAX_FLUX_GENERATIONS_PER_DAY)
-        if user_generations_today >= max_generations:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(bot.send_message(chat_id=chat_id, text=f"Sorry, you have reached your daily limit of {max_generations} Flux generations."))
-            return
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
-        # Initialize Flux generation
-        progress_message = loop.run_until_complete(bot.send_message(chat_id=chat_id, text="⚙️ Initializing Flux generation..."))
-        
-        # Call the Fal.ai client to generate the output
-        result = fal_client.generate_flux(prompt, model=DEFAULT_FLUX_MODEL)
-        logger.info(f"Flux API response for user {user_id}: {result}")
-        
-        # Assuming result contains a URL to the generated image
-        if result and 'image' in result and 'url' in result['image']:
-            image_url = result['image']['url']
-            loop.run_until_complete(bot.send_photo(chat_id=chat_id, photo=image_url, caption="Here is your Flux-generated image!"))
-        else:
-            raise ValueError("Unexpected response format from Flux API")
+        async def update_progress():
+            steps = [
+                "Analyzing prompt", "Preparing canvas", "Sketching outlines", 
+                "Adding details", "Applying colors", "Refining image", 
+                "Enhancing details", "Adjusting lighting", "Finalizing composition"
+            ]
+            step_index = 0
+            dots = 0
+            while True:
+                step = steps[step_index % len(steps)]
+                await bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=progress_message_id,
+                    text=f"🎨 {step}{'.' * dots}"
+                )
+                dots = (dots + 1) % 4
+                step_index += 1
+                await asyncio.sleep(2)
 
-        # Save the generation to the database
-        save_user_generation(user_id, prompt, "flux")
-        
-    except Exception as e:
-        logger.error(f"Flux generation error for user {user_id}: {str(e)}")
-        record_error("flux_generation_error")
-        loop.run_until_complete(bot.send_message(chat_id=chat_id, text=f"An error occurred during Flux generation: {str(e)}"))
-    
-    finally:
+        async def generate_image():
+            progress_task = asyncio.create_task(update_progress())
+            try:
+                handler = fal_client.submit(
+                    model_id,
+                    arguments={
+                        "prompt": prompt,
+                    }
+                )
+
+                result = handler.get()
+
+                if result and 'images' in result and len(result['images']) > 0:
+                    image_url = result['images'][0]['url']
+                    logger.info(f"Image URL received: {image_url}")
+                    
+                    await bot.send_photo(
+                        chat_id=chat_id,
+                        photo=image_url,
+                        caption=f"Generated Flux image for: {prompt}"
+                    )
+                    
+                    # Save user generation
+                    save_user_generation(user_id, prompt, "flux")
+                    
+                    # Calculate and send remaining generations message
+                    user_generations_today = get_user_generations_today(user_id, "flux")
+                    remaining_generations = MAX_FLUX_GENERATIONS_PER_DAY - user_generations_today
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=f"You have {remaining_generations} Flux image generations left for today."
+                    )
+                else:
+                    logger.error("No image URL in the result")
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text="Sorry, I couldn't generate an image. Please try again."
+                    )
+            finally:
+                progress_task.cancel()
+                await bot.delete_message(chat_id=chat_id, message_id=progress_message_id)
+
+        loop.run_until_complete(generate_image())
+
         end_time = time.time()
-        record_response_time(end_time - start_time)
-        logger.info(f"Flux generation completed in {end_time - start_time:.2f} seconds for user {user_id}")
+        response_time = end_time - start_time
+        record_response_time(response_time)
+        logger.info(f"Flux image generated in {response_time:.2f} seconds")
+
+    except Exception as e:
+        logger.error(f"Flux image generation error for user {user_id}: {str(e)}")
+        loop.run_until_complete(bot.send_message(
+            chat_id=chat_id,
+            text=f"An error occurred while generating the Flux image: {str(e)}"
+        ))
+        record_error("flux_image_generation_error")
+    finally:
         loop.close()
