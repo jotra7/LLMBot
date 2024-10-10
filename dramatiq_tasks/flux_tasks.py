@@ -7,7 +7,7 @@ import time
 from telegram import Bot
 from config import TELEGRAM_BOT_TOKEN, FLUX_MODELS, DEFAULT_FLUX_MODEL, MAX_FLUX_GENERATIONS_PER_DAY
 from performance_metrics import record_command_usage, record_response_time, record_error
-from database import get_user_generations_today, save_user_generation, get_user_model, save_user_model
+from database import get_user_generations_today, save_user_generation, get_user_data
 import fal_client
 
 logger = logging.getLogger(__name__)
@@ -22,10 +22,10 @@ def generate_flux_task(prompt: str, user_id: int, chat_id: int):
     
     logger.info(f"Flux generation task started for user {user_id} with prompt: '{prompt}'")
     
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
     try:
-        # Use the current running event loop
-        loop = asyncio.get_running_loop()
-
         # Check daily generation limits
         user_generations_today = get_user_generations_today(user_id, "flux")
         logger.info(f"User {user_id} has generated {user_generations_today} Flux generations today")
@@ -38,12 +38,9 @@ def generate_flux_task(prompt: str, user_id: int, chat_id: int):
         # Initialize Flux generation
         progress_message = loop.run_until_complete(bot.send_message(chat_id=chat_id, text="🎨 Initializing Flux generation..."))
         
-        # Retrieve the user's model preference or use the default model
-        model_name = get_user_model(user_id, "flux_model")
-        if not model_name:
-            model_name = DEFAULT_FLUX_MODEL
-            save_user_model(user_id, "flux_model", model_name)  # Save the default model as the user's preference
-        
+        # Get the current model set by the user or use the default
+        user_data = get_user_data(user_id)
+        model_name = user_data.get('flux_model', DEFAULT_FLUX_MODEL)
         model_id = FLUX_MODELS.get(model_name, 'fal-ai/flux-pro/v1.1')
 
         # Async progress updater
@@ -91,11 +88,6 @@ def generate_flux_task(prompt: str, user_id: int, chat_id: int):
                 loop.run_until_complete(bot.send_message(chat_id=chat_id, text="Sorry, I couldn't generate an image. Please try again."))
         finally:
             progress_task.cancel()
-            try:
-                loop.run_until_complete(progress_task)
-            except asyncio.CancelledError:
-                pass
-
             loop.run_until_complete(progress_message.delete())
 
         end_time = time.time()
@@ -108,5 +100,5 @@ def generate_flux_task(prompt: str, user_id: int, chat_id: int):
         loop.run_until_complete(bot.send_message(chat_id=chat_id, text=f"An error occurred during Flux generation: {str(e)}"))
         record_error("flux_generation_error")
     finally:
+        loop.close()
         logger.info(f"Flux command execution completed for user {user_id}")
-
