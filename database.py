@@ -56,11 +56,58 @@ def init_db():
                     replicate_model TEXT
                 )
                 """)
+
+                # Create conversations table
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    user_message TEXT,
+                    bot_response TEXT,
+                    model_type VARCHAR(20),
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """)
+
+                # Create users table
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id BIGINT PRIMARY KEY,
+                    total_messages INT DEFAULT 0,
+                    total_claude_messages INT DEFAULT 0,
+                    total_gpt_messages INT DEFAULT 0,
+                    last_interaction TIMESTAMP
+                )
+                """)
             conn.commit()
         logger.info("Database initialized successfully")
     except Exception as e:
         logger.error(f"Error initializing database: {e}")
         raise
+
+def save_conversation(user_id: int, user_message: str, bot_response: str, model_type: str = 'claude'):
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                # Insert into conversations table
+                cur.execute(
+                    "INSERT INTO conversations (user_id, user_message, bot_response, model_type) VALUES (%s, %s, %s, %s)",
+                    (user_id, user_message, bot_response, model_type)
+                )
+                # Update or insert into users table
+                cur.execute("""
+                    INSERT INTO users (id, total_messages, total_claude_messages, total_gpt_messages, last_interaction) 
+                    VALUES (%s, 1, CASE WHEN %s = 'claude' THEN 1 ELSE 0 END, CASE WHEN %s = 'gpt' THEN 1 ELSE 0 END, NOW())
+                    ON CONFLICT (id) DO UPDATE SET 
+                    total_messages = users.total_messages + 1,
+                    total_claude_messages = users.total_claude_messages + CASE WHEN %s = 'claude' THEN 1 ELSE 0 END,
+                    total_gpt_messages = users.total_gpt_messages + CASE WHEN %s = 'gpt' THEN 1 ELSE 0 END,
+                    last_interaction = NOW()
+                """, (user_id, model_type, model_type, model_type, model_type))
+            conn.commit()
+        logger.info(f"Conversation saved and counts updated for user {user_id} using {model_type} model")
+    except Exception as e:
+        logger.error(f"Error saving conversation: {e}")
 
 def get_user_generations_today(user_id: int, generation_type: str) -> int:
     try:
