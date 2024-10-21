@@ -1,14 +1,16 @@
 import logging
 import time
+import base64
+import io
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
+from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from config import OPENAI_API_KEY
 from utils import openai_client
 from performance_metrics import record_command_usage, record_response_time, record_model_usage, record_error
 from queue_system import queue_task
 from database import save_conversation, get_user_conversations
 import openai
-import base64
+from pydub import AudioSegment
 
 logger = logging.getLogger(__name__)
 
@@ -117,23 +119,22 @@ async def gpt_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def list_gpt_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("list_gpt_models")
-    if not gpt_models:
-        await fetch_gpt_models()
+    models = await fetch_gpt_models()
     
-    models_text = "Available GPT models:\n" + "\n".join([f"• {model}" for model in gpt_models])
+    models_text = "Available GPT models:\n" + "\n".join([f"• {model}" for model in models])
     await update.message.reply_text(models_text)
 
 async def set_gpt_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("set_gpt_model")
     try:
-        gpt_models = await fetch_gpt_models()
+        models = await fetch_gpt_models()
         
-        if not gpt_models:
+        if not models:
             await update.message.reply_text("No suitable GPT models are available at the moment. Please try again later.")
             return
 
         keyboard = []
-        for model in gpt_models:
+        for model in models:
             keyboard.append([InlineKeyboardButton(model, callback_data=f"set_gpt_model:{model}")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -161,6 +162,50 @@ async def current_gpt_model(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await update.message.reply_text(f"Current GPT model: {model}")
     logger.info(f"User {update.effective_user.id} checked current GPT model: {model}")
 
+async def process_audio_interaction(update: Update, context: ContextTypes.DEFAULT_TYPE, input_content) -> None:
+    user_id = update.effective_user.id
+    
+    try:
+        start_time = time.time()
+        
+        # Retrieve the conversation history
+        conversation = context.user_data.get('audio_conversation', [])
+        
+        # Add the new message to the conversation
+        conversation.append({"role": "user", "content": input_content})
+        
+        completion = await openai_client.chat.completions.create(
+            model="gpt-4o-audio-preview",
+            modalities=["text", "audio"],
+            audio={"voice": "alloy", "format": "wav"},
+            messages=conversation
+        )
+
+        assistant_message = completion.choices[0].message
+        wav_bytes = base64.b64decode(assistant_message.audio.data)
+        transcript = assistant_message.audio.transcript
+
+        # Add the assistant's response to the conversation
+        conversation.append({"role": "assistant", "content": transcript})
+        
+        # Save the updated conversation
+        context.user_data['audio_conversation'] = conversation
+
+        end_time = time.time()
+        response_time = end_time - start_time
+        record_response_time(response_time)
+        record_model_usage("gpt-4o-audio-preview")
+
+        # Send the audio file and transcript
+        await update.message.reply_voice(io.BytesIO(wav_bytes), caption=f"Transcript: {transcript[:1000]}...")
+
+        logger.info(f"Audio response sent for user {user_id}")
+
+    except Exception as e:
+        logger.error(f"Error in audio interaction for user {user_id}: {str(e)}")
+        await update.message.reply_text(f"An error occurred while processing your request: {str(e)}")
+        record_error("audio_interaction_error")
+
 @queue_task('long_run')
 async def speak_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("speak")
@@ -172,47 +217,41 @@ async def speak_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     user_id = update.effective_user.id
     logger.info(f"User {user_id} requested speak command: '{prompt[:50]}...'")
 
+    await process_audio_interaction(update, context, prompt)
+
+@queue_task('long_run')
+async def voice_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("voice_query")
+    user_id = update.effective_user.id
+    
+    if not update.message.voice:
+        logger.warning(f"User {user_id} triggered voice query handler without a voice message")
+        return
+
+    file = await context.bot.get_file(update.message.voice.file_id)
+    ogg_data = await file.download_as_bytearray()
+    
+    logger.info(f"User {user_id} sent a voice query")
+
     try:
-        start_time = time.time()
-        
-        # Retrieve the conversation history
-        messages = context.user_data.get('audio_conversation', [])
-        messages.append({"role": "user", "content": prompt})
+        # Convert OGG to WAV
+        audio = AudioSegment.from_ogg(io.BytesIO(ogg_data))
+        wav_io = io.BytesIO()
+        audio.export(wav_io, format="wav")
+        wav_data = wav_io.getvalue()
+        encoded_voice = base64.b64encode(wav_data).decode('utf-8')
 
-        completion = await openai_client.chat.completions.create(
-            model="gpt-4o-audio-preview",
-            modalities=["text", "audio"],
-            audio={"voice": "shimmer", "format": "wav"},
-            messages=messages
-        )
+        input_content = [
+            {"type": "text", "text": "This is an audio message from the user. Please respond to it."},
+            {"type": "input_audio", "input_audio": {"data": encoded_voice, "format": "wav"}}
+        ]
 
-        assistant_message = completion.choices[0].message
-        wav_bytes = base64.b64decode(assistant_message.audio.data)
-        audio_id = assistant_message.audio.id
-        transcript = assistant_message.audio.transcript
-
-        # Update the conversation history
-        messages.append({
-            "role": "assistant",
-            "audio": {"id": audio_id},
-            "content": transcript
-        })
-        context.user_data['audio_conversation'] = messages
-
-        end_time = time.time()
-        response_time = end_time - start_time
-        record_response_time(response_time)
-        record_model_usage("gpt-4o-audio-preview")
-
-        # Send the audio file and transcript
-        await update.message.reply_voice(wav_bytes, caption=f"Transcript: {transcript[:1000]}...")
-
-        logger.info(f"Audio response sent for user {user_id}")
+        await process_audio_interaction(update, context, input_content)
 
     except Exception as e:
-        logger.error(f"Error in speak command for user {user_id}: {str(e)}")
-        await update.message.reply_text(f"An error occurred while processing your request: {str(e)}")
-        record_error("speak_command_error")
+        logger.error(f"Error processing voice message for user {user_id}: {str(e)}")
+        await update.message.reply_text(f"An error occurred while processing your voice message: {str(e)}")
+        record_error("voice_processing_error")
 
 async def clear_audio_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -223,16 +262,15 @@ async def clear_audio_conversation(update: Update, context: ContextTypes.DEFAULT
         await update.message.reply_text("No audio conversation history to clear.")
     logger.info(f"Audio conversation cleared for user {user_id}")
 
-
 def setup_gpt_handlers(application):
     application.add_handler(CommandHandler("gpt", gpt_command))
     application.add_handler(CommandHandler("list_gpt_models", list_gpt_models))
     application.add_handler(CommandHandler("set_gpt_model", set_gpt_model))
     application.add_handler(CommandHandler("current_gpt_model", current_gpt_model))
     application.add_handler(CallbackQueryHandler(gpt_model_callback, pattern="^set_gpt_model:"))
-    application.add_handler(CommandHandler("speak", speak_command)) 
+    application.add_handler(CommandHandler("speak", speak_command))
+    application.add_handler(MessageHandler(filters.VOICE, voice_query_handler))
     application.add_handler(CommandHandler("clear_audio_chat", clear_audio_conversation))
-
 
     # Fetch GPT models on startup
     application.job_queue.run_once(lambda _: fetch_gpt_models(), when=1)
