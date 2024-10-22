@@ -177,9 +177,20 @@ def get_performance_metrics():
     
     logger.info(f"Retrieved performance metrics")
     return metrics
-
+def record_connection_error(error_type: str, details: str = None):
+    """Record connection error details for monitoring"""
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO connection_errors (error_type, details, timestamp)
+                    VALUES (%s, %s, CURRENT_TIMESTAMP)
+                """, (error_type, details))
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to record connection error: {e}")
 
 # Make sure all necessary functions are exported
 __all__ = ['init_performance_db', 'record_response_time', 'record_model_usage', 
            'record_command_usage', 'record_error', 'save_performance_data', 
-           'get_performance_metrics']
+           'get_performance_metrics','record_connection_error']

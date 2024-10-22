@@ -346,4 +346,20 @@ def get_user_conversations(user_id: int, limit: int = 5, model_type: Optional[st
                 )
             return [{'user_message': row[0], 'bot_response': row[1]} for row in cur.fetchall()]
 # Initialize the database
+def save_gpt_conversation(user_id: int, messages: list):
+    """Save the GPT conversation history for a user."""
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO user_data (user_id, data_type, data)
+                    VALUES (%s, 'gpt_conversation', %s)
+                    ON CONFLICT (user_id, data_type) 
+                    DO UPDATE SET data = %s, updated_at = CURRENT_TIMESTAMP
+                """, (user_id, json.dumps(messages), json.dumps(messages)))
+            conn.commit()
+        logger.info(f"Saved GPT conversation for user {user_id}")
+    except Exception as e:
+        logger.error(f"Error saving GPT conversation for user {user_id}: {e}")
+
 init_db()

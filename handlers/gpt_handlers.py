@@ -236,19 +236,6 @@ async def process_audio_interaction(update: Update, context: ContextTypes.DEFAUL
         record_error("audio_interaction_error")
 
 @queue_task('long_run')
-async def speak_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    record_command_usage("speak")
-    if not context.args:
-        await update.message.reply_text("Please provide a prompt after the /speak command.")
-        return
-
-    prompt = ' '.join(context.args)
-    user_id = update.effective_user.id
-    logger.info(f"User {user_id} requested speak command: '{prompt[:50]}...'")
-
-    await process_audio_interaction(update, context, prompt)
-
-@queue_task('long_run')
 async def voice_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("voice_query")
     user_id = update.effective_user.id
@@ -279,28 +266,32 @@ async def voice_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         voice_data_base64 = base64.b64encode(voice_data).decode('utf-8')
 
         # Get existing conversation history
-        conversation_history = context.user_data.get('audio_conversation', [])
-        
+        conversation_history = context.user_data.get('gpt_conversation', [])
+        if not isinstance(conversation_history, list):
+            conversation_history = []
+            context.user_data['gpt_conversation'] = conversation_history
+
         logger.info(f"User {user_id} voice message queued for processing")
 
         # Send to dramatiq task
         from dramatiq_tasks.voice_tasks import process_voice_message_task
         
-        # Store the message ID for result handling
-        context.user_data['last_voice_message_id'] = status_message.message_id
+        # Pack conversation data into the task context
+        task_context = {
+            'conversation_history': list(conversation_history),
+            'user_data': dict(context.user_data)
+        }
         
-        result = await process_voice_message_task.send(
+        # Execute the task
+        process_voice_message_task.send(
             voice_data_base64,
             user_id,
             update.effective_chat.id,
             status_message.message_id,
-            conversation_history
+            task_context
         )
-        
-        # Update conversation history if successful
-        if result and result.get('success'):
-            context.user_data['audio_conversation'] = result['conversation']
-            logger.info(f"Updated conversation history for user {user_id}")
+
+        logger.info(f"Voice message successfully queued for user {user_id}")
 
     except Exception as e:
         logger.error(f"Error queueing voice message for user {user_id}: {str(e)}")
@@ -308,6 +299,72 @@ async def voice_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             "❌ Sorry, there was an error processing your voice message. Please try again later."
         )
         record_error("voice_processing_error")
+
+async def clear_audio_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clear the GPT conversation history for the user."""
+    user_id = update.effective_user.id
+    if 'gpt_conversation' in context.user_data:
+        del context.user_data['gpt_conversation']
+        await update.message.reply_text("🔄 Conversation history has been cleared.")
+        logger.info(f"Conversation history cleared for user {user_id}")
+    else:
+        await update.message.reply_text("No conversation history to clear.")
+
+@queue_task('long_run')
+async def speak_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    record_command_usage("speak")
+    if not context.args:
+        await update.message.reply_text("Please provide a prompt after the /speak command.")
+        return
+
+    prompt = ' '.join(context.args)
+    user_id = update.effective_user.id
+    logger.info(f"User {user_id} requested speak command: '{prompt[:50]}...'")
+
+    try:
+        start_time = time.time()
+        
+        # Get existing conversation history
+        messages = context.user_data.get('gpt_conversation', [])
+        messages.append({"role": "user", "content": prompt})
+
+        completion = await openai_client.chat.completions.create(
+            model="gpt-4o-audio-preview",
+            modalities=["text", "audio"],
+            audio={"voice": "alloy", "format": "wav"},
+            messages=messages
+        )
+
+        assistant_message = completion.choices[0].message
+        wav_bytes = base64.b64decode(assistant_message.audio.data)
+        transcript = assistant_message.audio.transcript
+
+        # Update conversation history with both the transcript and audio response
+        messages.append({
+            "role": "assistant",
+            "content": transcript
+        })
+        
+        # Update the conversation history in context
+        context.user_data['gpt_conversation'] = messages[-10:]  # Keep last 10 messages
+
+        end_time = time.time()
+        response_time = end_time - start_time
+        record_response_time(response_time)
+        record_model_usage("gpt-4o-audio-preview")
+
+        # Send the audio file and transcript
+        await update.message.reply_voice(
+            io.BytesIO(wav_bytes), 
+            caption=f"🎯 Transcript: {transcript[:1000]}..."
+        )
+
+        logger.info(f"Audio response sent for user {user_id}")
+
+    except Exception as e:
+        logger.error(f"Error in speak command for user {user_id}: {str(e)}")
+        await update.message.reply_text(f"An error occurred while processing your request: {str(e)}")
+        record_error("speak_command_error")
 
 async def clear_audio_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Clear the audio conversation history for the user."""
