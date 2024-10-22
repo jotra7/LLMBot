@@ -68,8 +68,8 @@ def queue_task(task_type='quick'):
             
             await task_queue.add_task(task_type, user_id, task_wrapper)
             
-            if task_type == 'long_run':
-                await update.message.reply_text("Your request has been queued. You'll be notified when it's ready.")
+#            if task_type == 'long_run':
+#                await update.message.reply_text("Your request has been queued. You'll be notified when it's ready.")
         
         return wrapper
     return decorator
