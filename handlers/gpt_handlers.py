@@ -278,16 +278,29 @@ async def voice_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Convert to base64 for sending to dramatiq
         voice_data_base64 = base64.b64encode(voice_data).decode('utf-8')
 
+        # Get existing conversation history
+        conversation_history = context.user_data.get('audio_conversation', [])
+        
         logger.info(f"User {user_id} voice message queued for processing")
 
         # Send to dramatiq task
         from dramatiq_tasks.voice_tasks import process_voice_message_task
-        process_voice_message_task.send(
+        
+        # Store the message ID for result handling
+        context.user_data['last_voice_message_id'] = status_message.message_id
+        
+        result = await process_voice_message_task.send(
             voice_data_base64,
             user_id,
             update.effective_chat.id,
-            status_message.message_id
+            status_message.message_id,
+            conversation_history
         )
+        
+        # Update conversation history if successful
+        if result and result.get('success'):
+            context.user_data['audio_conversation'] = result['conversation']
+            logger.info(f"Updated conversation history for user {user_id}")
 
     except Exception as e:
         logger.error(f"Error queueing voice message for user {user_id}: {str(e)}")
@@ -295,6 +308,16 @@ async def voice_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             "❌ Sorry, there was an error processing your voice message. Please try again later."
         )
         record_error("voice_processing_error")
+
+async def clear_audio_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clear the audio conversation history for the user."""
+    user_id = update.effective_user.id
+    if 'audio_conversation' in context.user_data:
+        del context.user_data['audio_conversation']
+        await update.message.reply_text("🔄 Audio conversation history has been cleared.")
+        logger.info(f"Audio conversation cleared for user {user_id}")
+    else:
+        await update.message.reply_text("No audio conversation history to clear.")
         
 async def clear_audio_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id

@@ -11,7 +11,7 @@ from utils import openai_client
 logger = logging.getLogger(__name__)
 
 @dramatiq.actor
-def process_voice_message_task(voice_data_base64: str, user_id: int, chat_id: int, message_id: int):
+def process_voice_message_task(voice_data_base64: str, user_id: int, chat_id: int, message_id: int, conversation_history: list):
     try:
         # Initialize bot
         bot = Bot(token=TELEGRAM_BOT_TOKEN)
@@ -46,21 +46,25 @@ def process_voice_message_task(voice_data_base64: str, user_id: int, chat_id: in
             )
         )
 
+        # Prepare user's voice message for the conversation
+        current_message = {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "This is an audio message from the user. Please respond to it."},
+                {"type": "input_audio", "input_audio": {"data": encoded_voice, "format": "wav"}}
+            ]
+        }
+
+        # Combine existing conversation history with current message
+        messages = conversation_history + [current_message]
+
         # Process with OpenAI
         completion = loop.run_until_complete(
             openai_client.chat.completions.create(
                 model="gpt-4o-audio-preview",
                 modalities=["text", "audio"],
                 audio={"voice": "alloy", "format": "wav"},
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": "This is an audio message from the user. Please respond to it."},
-                            {"type": "input_audio", "input_audio": {"data": encoded_voice, "format": "wav"}}
-                        ]
-                    }
-                ]
+                messages=messages
             )
         )
 
@@ -92,7 +96,14 @@ def process_voice_message_task(voice_data_base64: str, user_id: int, chat_id: in
             )
         )
 
-        logger.info(f"Voice message processed successfully for user {user_id}")
+        # Return the updated conversation history for the bot to store
+        return {
+            "success": True,
+            "conversation": messages + [{
+                "role": "assistant",
+                "content": transcript
+            }]
+        }
 
     except Exception as e:
         logger.error(f"Error processing voice message for user {user_id}: {str(e)}")
@@ -112,5 +123,6 @@ def process_voice_message_task(voice_data_base64: str, user_id: int, chat_id: in
                     text=f"❌ Sorry, there was an error processing your voice message: {str(e)}"
                 )
             )
+        return {"success": False, "error": str(e)}
     finally:
         loop.close()
