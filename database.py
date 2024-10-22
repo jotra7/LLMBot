@@ -346,7 +346,7 @@ def get_user_conversations(user_id: int, limit: int = 5, model_type: Optional[st
                 )
             return [{'user_message': row[0], 'bot_response': row[1]} for row in cur.fetchall()]
 # Initialize the database
-def save_gpt_conversation(user_id: int, messages: list):
+def save_gpt_conversation(user_id: int, conversation: list):
     """Save the GPT conversation history for a user."""
     try:
         with get_postgres_connection() as conn:
@@ -355,11 +355,46 @@ def save_gpt_conversation(user_id: int, messages: list):
                     INSERT INTO user_data (user_id, data_type, data)
                     VALUES (%s, 'gpt_conversation', %s)
                     ON CONFLICT (user_id, data_type) 
-                    DO UPDATE SET data = %s, updated_at = CURRENT_TIMESTAMP
-                """, (user_id, json.dumps(messages), json.dumps(messages)))
+                    DO UPDATE SET 
+                        data = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (user_id, json.dumps(conversation), json.dumps(conversation)))
             conn.commit()
         logger.info(f"Saved GPT conversation for user {user_id}")
     except Exception as e:
         logger.error(f"Error saving GPT conversation for user {user_id}: {e}")
+
+def get_gpt_conversation(user_id: int) -> list:
+    """Retrieve the GPT conversation history for a user."""
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT data FROM user_data 
+                    WHERE user_id = %s AND data_type = 'gpt_conversation'
+                """, (user_id,))
+                result = cur.fetchone()
+                if result:
+                    return json.loads(result[0])
+        return []
+    except Exception as e:
+        logger.error(f"Error retrieving GPT conversation for user {user_id}: {e}")
+        return []
+
+def clear_gpt_conversation(user_id: int) -> bool:
+    """Clear the GPT conversation history for a user."""
+    try:
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    DELETE FROM user_data 
+                    WHERE user_id = %s AND data_type = 'gpt_conversation'
+                """, (user_id,))
+            conn.commit()
+        logger.info(f"Cleared GPT conversation for user {user_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Error clearing GPT conversation for user {user_id}: {e}")
+        return False
 
 init_db()
