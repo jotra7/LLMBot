@@ -228,31 +228,45 @@ async def voice_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.warning(f"User {user_id} triggered voice query handler without a voice message")
         return
 
-    file = await context.bot.get_file(update.message.voice.file_id)
-    ogg_data = await file.download_as_bytearray()
-    
-    logger.info(f"User {user_id} sent a voice query")
+    if not check_ffmpeg():
+        error_message = ("FFmpeg is not installed or not in the system PATH. "
+                        "Voice message processing is currently unavailable. "
+                        "Please contact the bot administrator.")
+        logger.error(f"FFmpeg not found for processing voice message from user {user_id}")
+        await update.message.reply_text(error_message)
+        return
 
     try:
-        # Convert OGG to WAV
-        audio = AudioSegment.from_ogg(io.BytesIO(ogg_data))
-        wav_io = io.BytesIO()
-        audio.export(wav_io, format="wav")
-        wav_data = wav_io.getvalue()
-        encoded_voice = base64.b64encode(wav_data).decode('utf-8')
+        # Send initial status message
+        status_message = await update.message.reply_text(
+            "🎤 Voice message received! Starting processing..."
+        )
 
-        input_content = [
-            {"type": "text", "text": "This is an audio message from the user. Please respond to it."},
-            {"type": "input_audio", "input_audio": {"data": encoded_voice, "format": "wav"}}
-        ]
+        # Download the voice message
+        file = await context.bot.get_file(update.message.voice.file_id)
+        voice_data = await file.download_as_bytearray()
+        
+        # Convert to base64 for sending to dramatiq
+        voice_data_base64 = base64.b64encode(voice_data).decode('utf-8')
 
-        await process_audio_interaction(update, context, input_content)
+        logger.info(f"User {user_id} voice message queued for processing")
+
+        # Send to dramatiq task
+        from dramatiq_tasks.voice_tasks import process_voice_message_task
+        process_voice_message_task.send(
+            voice_data_base64,
+            user_id,
+            update.effective_chat.id,
+            status_message.message_id
+        )
 
     except Exception as e:
-        logger.error(f"Error processing voice message for user {user_id}: {str(e)}")
-        await update.message.reply_text(f"An error occurred while processing your voice message: {str(e)}")
+        logger.error(f"Error queueing voice message for user {user_id}: {str(e)}")
+        await update.message.reply_text(
+            "❌ Sorry, there was an error processing your voice message. Please try again later."
+        )
         record_error("voice_processing_error")
-
+        
 async def clear_audio_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     if 'audio_conversation' in context.user_data:
