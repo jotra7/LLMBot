@@ -11,11 +11,40 @@ from queue_system import queue_task
 from database import save_conversation, get_user_conversations
 import openai
 from pydub import AudioSegment
+import subprocess
+
 
 logger = logging.getLogger(__name__)
 
 gpt_models = []
 DEFAULT_GPT_MODEL = None
+
+def check_ffmpeg() -> bool:
+    """
+    Check if ffmpeg is installed and available in the system PATH.
+    
+    Returns:
+        bool: True if ffmpeg is available, False otherwise
+    """
+    try:
+        # Check ffmpeg
+        subprocess.run(
+            ["ffmpeg", "-version"], 
+            stdout=subprocess.DEVNULL, 
+            stderr=subprocess.DEVNULL, 
+            check=True
+        )
+        # Check ffprobe (required by pydub)
+        subprocess.run(
+            ["ffprobe", "-version"], 
+            stdout=subprocess.DEVNULL, 
+            stderr=subprocess.DEVNULL, 
+            check=True
+        )
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
 
 async def fetch_gpt_models():
     try:
