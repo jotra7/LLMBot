@@ -1,5 +1,5 @@
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
-from config import TELEGRAM_BOT_TOKEN, ADMIN_USER_IDS
+from config import TELEGRAM_BOT_TOKEN, REDIS_DB, REDIS_HOST, REDIS_PORT
 from handlers import (
     user_handlers,
     model_handlers,
@@ -19,7 +19,7 @@ from performance_metrics import save_performance_data
 from database import cleanup_old_generations
 from datetime import timedelta, time
 from dramatiq_handlers import generate_image_dramatiq, analyze_image_dramatiq, fluxnew_command, suno_generate_instrumental_dramatiq, suno_generate_music_dramatiq, setup_cust_mus_gen_handler
-
+import redis
 
 def create_application():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
@@ -118,8 +118,17 @@ async def initialize_bot():
     application.job_queue.run_repeating(leonardo_handlers.update_leonardo_model_cache, interval=timedelta(days=1), first=timedelta(days=1))
     application.job_queue.run_daily(lambda _: cleanup_old_generations(), time=time(hour=0, minute=0))
 
+    redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
+    audio_id_pattern = "user:*:audio_id"
 
-    # Initialize the application
-    await application.initialize()
+    deleted_count = 0
+    for key in redis_client.scan_iter(audio_id_pattern):
+        redis_client.delete(key)
+        deleted_count += 1
+
+    if deleted_count > 0:
+        print(f"Flushed {deleted_count} audio IDs from Redis at bot startup.")
+    else:
+        print(f"No audio IDs found to flush on bot startup.")
 
     return application

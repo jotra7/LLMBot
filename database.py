@@ -19,6 +19,11 @@ logger = logging.getLogger(__name__)
 
 # Redis setup
 redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
+audio_id_pattern = "audio_id:*"
+
+# Iterate over all keys matching the audio ID pattern and delete them
+for key in redis_client.scan_iter(audio_id_pattern):
+    redis_client.delete(key)
 
 # PostgreSQL setup
 def get_postgres_connection():
@@ -346,24 +351,6 @@ def get_user_conversations(user_id: int, limit: int = 5, model_type: Optional[st
                 )
             return [{'user_message': row[0], 'bot_response': row[1]} for row in cur.fetchall()]
 # Initialize the database
-def save_gpt_conversation(user_id: int, conversation: list):
-    """Save the GPT conversation history for a user."""
-    try:
-        with get_postgres_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO user_data (user_id, data_type, data)
-                    VALUES (%s, 'gpt_conversation', %s)
-                    ON CONFLICT (user_id, data_type) 
-                    DO UPDATE SET 
-                        data = %s,
-                        updated_at = CURRENT_TIMESTAMP
-                """, (user_id, json.dumps(conversation), json.dumps(conversation)))
-            conn.commit()
-        logger.info(f"Saved GPT conversation for user {user_id}")
-    except Exception as e:
-        logger.error(f"Error saving GPT conversation for user {user_id}: {e}")
-
 def get_gpt_conversation(user_id: int) -> list:
     """Retrieve the GPT conversation history for a user."""
     try:
@@ -375,11 +362,35 @@ def get_gpt_conversation(user_id: int) -> list:
                 """, (user_id,))
                 result = cur.fetchone()
                 if result:
+                    # Deserialize JSON string to Python list
                     return json.loads(result[0])
-        return []
+        return []  # Return an empty list if no conversation history is found
     except Exception as e:
         logger.error(f"Error retrieving GPT conversation for user {user_id}: {e}")
         return []
+
+
+def save_gpt_conversation(user_id: int, conversation: list):
+    """Save the GPT conversation history for a user."""
+    try:
+        # Serialize the conversation to JSON string before saving
+        conversation_json = json.dumps(conversation)
+
+        with get_postgres_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO user_data (user_id, data_type, data)
+                    VALUES (%s, 'gpt_conversation', %s)
+                    ON CONFLICT (user_id, data_type) 
+                    DO UPDATE SET 
+                        data = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (user_id, conversation_json, conversation_json))
+            conn.commit()
+        logger.info(f"Saved GPT conversation for user {user_id}")
+    except Exception as e:
+        logger.error(f"Error saving GPT conversation for user {user_id}: {e}")
+
 
 def clear_gpt_conversation(user_id: int) -> bool:
     """Clear the GPT conversation history for a user."""
