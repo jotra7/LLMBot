@@ -24,7 +24,7 @@ import redis
 def create_application():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Add handlers from user_handlers
+    # Add handlers from user_handlers first
     application.add_handler(user_handlers.conv_handler)
     application.add_handler(CommandHandler("help", user_handlers.help_menu))
     application.add_handler(CommandHandler("history", user_handlers.get_history))
@@ -32,10 +32,14 @@ def create_application():
     application.add_handler(CommandHandler("get_system_message", user_handlers.get_system_message))
     application.add_handler(CommandHandler("delete_session", user_handlers.delete_session_command))
 
+    # Add GPT handlers early (to catch voice_select callbacks)
+    gpt_handlers.setup_gpt_handlers(application)
+
     # Add handlers from model_handlers
     application.add_handler(CommandHandler("list_models", model_handlers.list_models))
     application.add_handler(CommandHandler("set_model", model_handlers.set_model))
     application.add_handler(CommandHandler("current_model", model_handlers.current_model))
+    application.add_handler(CallbackQueryHandler(model_handlers.button_callback))
 
     # Add handlers from voice_handlers
     application.add_handler(CommandHandler("tts", voice_handlers.tts_command))
@@ -45,24 +49,19 @@ def create_application():
     application.add_handler(voice_handlers.voice_addition_handler)
     application.add_handler(CommandHandler("delete_custom_voice", voice_handlers.delete_custom_voice))
 
-    # Add handlers from voice_tasks
-
-    application.add_handler(CommandHandler("list_gpt_voices", gpt_handlers.list_gpt_voices))
-    application.add_handler(CommandHandler("set_gpt_voice", gpt_handlers.set_gpt_voice))
-    application.add_handler(CommandHandler("current_gpt_voice", gpt_handlers.current_gpt_voice))
-    application.add_handler(CommandHandler("preview_gpt_voice", gpt_handlers.preview_gpt_voice))
-    # Add the new dramatiq handlers
+    # Add dramatiq handlers
     application.add_handler(CommandHandler("generate_image", generate_image_dramatiq))
     application.add_handler(CommandHandler("analyze_image", analyze_image_dramatiq))
     application.add_handler(CommandHandler("generate_music", suno_generate_music_dramatiq))
     application.add_handler(CommandHandler("generate_instrumental", suno_generate_instrumental_dramatiq))
     application.add_handler(CommandHandler('flux', fluxnew_command))
     setup_cust_mus_gen_handler(application)
-    # Add handlers from video_handlers
+
+    # Add video handlers
     application.add_handler(CommandHandler("video", video_handlers.generate_text_to_video))
     application.add_handler(CommandHandler("img2video", video_handlers.img2video_command))
 
-    # Add handlers from admin_handlers
+    # Add admin handlers
     application.add_handler(CommandHandler("admin_broadcast", admin_handlers.admin_broadcast))
     application.add_handler(CommandHandler("admin_user_stats", admin_handlers.admin_user_stats))
     application.add_handler(CommandHandler("admin_ban", admin_handlers.admin_ban_user))
@@ -73,22 +72,14 @@ def create_application():
     application.add_handler(CommandHandler("admin_update_models", admin_handlers.admin_update_model_cache))
     application.add_handler(CommandHandler("admin_performance", admin_handlers.admin_performance))
 
-    # Add handlers from flux_handlers
+    # Add flux and leonardo handlers
     flux_handlers.setup_flux_handlers(application)
-    # Add handlers from leonardo_handlers
     application.add_handler(CommandHandler("list_leonardo_models", leonardo_handlers.list_leonardo_models))
     application.add_handler(CommandHandler("set_leonardo_model", leonardo_handlers.set_leonardo_model))
     application.add_handler(CommandHandler("current_leonardo_model", leonardo_handlers.current_leonardo_model))
     application.add_handler(CommandHandler("leo", leonardo_handlers.leonardo_generate_image))
 
-    # Add GPT handlers
-    gpt_handlers.setup_gpt_handlers(application)
-    # Add Suno handlers
-
-
-    #suno_handlers.setup_suno_handlers(application)
-   # suno_handlers.setup_custom_music_handler(application)
-    # Add replicate Handlers
+    # Add replicate handlers
     replicate_handlers.setup_replicate_handlers(application)
 
     # Add message handler
@@ -100,12 +91,13 @@ def create_application():
     # Set up error handler
     application.add_error_handler(message_handlers.error_handler)
 
-    # Add callback query handlers
+    # Add remaining callback query handlers
     application.add_handler(CallbackQueryHandler(voice_handlers.voice_button_callback, pattern=r"^voice_"))
     application.add_handler(CallbackQueryHandler(flux_handlers.flux_model_callback, pattern=r"^set_flux_model:"))
     application.add_handler(CallbackQueryHandler(leonardo_handlers.leonardo_model_callback, pattern="^leo_model:"))
-    application.add_handler(CallbackQueryHandler(model_handlers.button_callback))
-    application.add_handler(CommandHandler("bug", user_handlers.bug_command))  # Correct way to add bug_command
+    
+    # Add bug command
+    application.add_handler(CommandHandler("bug", user_handlers.bug_command))
 
     return application
 
