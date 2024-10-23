@@ -21,6 +21,7 @@ CHOOSING, GUIDED_TOUR, BUG_REPORT, BUG_SCREENSHOT = range(4)
 # Define help categories
 help_categories = {
     'chat': "💬 Chatting with the Bot",
+    'voice_chat': "🎙️ Voice Chat with the Bot",
     'session': "🔄 Session Management",
     'gpt': "🤖 GPT Commands",
     'suno':"🎵 Music Generation",
@@ -139,7 +140,28 @@ def get_help_text(category):
             "• Use /gpt followed by your message to chat with GPT models.\n\n"
             "Start chatting to explore my capabilities!"
         ),
-         'session': (
+        'voice_chat': (
+            "🗣️ Voice Chat\n\n"
+            "Have natural voice conversations with AI:\n"
+            "• Send any voice message to start a voice conversation\n"
+            "• Voice messages will be transcribed and responded to with AI voice\n"
+            "• The AI will remember context within a voice conversation\n\n"
+            "Voice Settings:\n"
+            "• /list_gpt_voices - View available AI voices\n"
+            "• /set_gpt_voice - Choose your preferred AI voice\n"
+            "• /current_gpt_voice - Check which voice is active\n"
+            "• /preview_gpt_voice - Listen to samples of each voice\n\n"
+            "Voice Options:\n"
+            "• Alloy - Neutral and balanced\n"
+            "• Echo - Mature and deep\n"
+            "• Fable - British and proper\n"
+            "• Onyx - Authoritative and confident\n"
+            "• Nova - Warm and natural\n"
+            "• Shimmer - Clear and optimistic\n\n"
+            "Note: Changing voices will clear the conversation history to maintain voice consistency.\n\n"
+            "Have natural back-and-forth voice conversations with context!"
+        ),
+        'session': (
             "🔄 Session Management\n\n"
             "Understanding sessions enhances our interaction:\n"
             "• A session starts when you begin chatting and maintains context.\n"
@@ -279,20 +301,24 @@ async def guided_tour(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             InlineKeyboardButton("◀️ Previous", callback_data="tour_0"),
             InlineKeyboardButton("▶️ Next", callback_data="tour_2")
         ]),
-        ("2️⃣ Image Generation: Use /generate_image followed by a description to create unique images.", [
+        ("2️⃣ Voice Conversations: Send me a voice message and I'll respond with voice! Choose from different AI voices with /set_gpt_voice. We can have natural back-and-forth voice conversations!", [
             InlineKeyboardButton("◀️ Previous", callback_data="tour_1"),
             InlineKeyboardButton("▶️ Next", callback_data="tour_3")
         ]),
-        ("3️⃣ Text-to-Speech: Convert text to speech with /tts. You can even choose different voices!", [
+        ("3️⃣ Image Generation: Use /generate_image followed by a description to create unique images.", [
             InlineKeyboardButton("◀️ Previous", callback_data="tour_2"),
             InlineKeyboardButton("▶️ Next", callback_data="tour_4")
         ]),
-        ("4️⃣ Video Generation: Create short video clips with /video followed by a description.", [
+        ("4️⃣ Text-to-Speech: Convert text to speech with /tts using ElevenLabs voices. You can even add your own custom voice!", [
             InlineKeyboardButton("◀️ Previous", callback_data="tour_3"),
             InlineKeyboardButton("▶️ Next", callback_data="tour_5")
         ]),
-        ("5️⃣ Image Analysis: Send me an image or use /analyze_image to get a detailed description of any picture.", [
+        ("5️⃣ Video Generation: Create short video clips with /video followed by a description.", [
             InlineKeyboardButton("◀️ Previous", callback_data="tour_4"),
+            InlineKeyboardButton("▶️ Next", callback_data="tour_6")
+        ]),
+        ("6️⃣ Image Analysis: Send me an image or use /analyze_image to get a detailed description of any picture.", [
+            InlineKeyboardButton("◀️ Previous", callback_data="tour_5"),
             InlineKeyboardButton("▶️ Finish Tour", callback_data="tour_end")
         ]),
         ("Tour completed! You now know my main features. Feel free to explore more in the help menu or just start chatting!", [
@@ -326,6 +352,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         help_text = get_help_text('tts')
         await query.edit_message_text(help_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="start")]]))
         return CHOOSING
+    elif query.data == "voice_chat":  # Add this section if there's a voice chat button in start menu
+        help_text = get_help_text('voice_chat')
+        await query.edit_message_text(help_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="start")]]))
+        return CHOOSING
     elif query.data == "admin_panel":
         if update.effective_user.id in ADMIN_USER_IDS:
             admin_panel_text = (
@@ -350,7 +380,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     else:
         await query.edit_message_text("I'm not sure how to handle that request. Please try using a command from the /help list.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="start")]]))
         return CHOOSING
-
+    
 async def delete_session_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     record_command_usage("delete_session")
     user_id = update.effective_user.id
