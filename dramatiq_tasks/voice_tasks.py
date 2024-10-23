@@ -6,22 +6,27 @@ import json
 import tenacity
 from pydub import AudioSegment
 from telegram import Bot
-from config import TELEGRAM_BOT_TOKEN
+import telegram
 import asyncio
 from utils import openai_client
 from dramatiq.middleware import CurrentMessage
 from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential, retry_if_exception_type, before_sleep_log, after_log
 import httpx
 import openai
-from openai import AsyncOpenAI
 import redis
-from config import (REDIS_HOST, REDIS_PORT, REDIS_DB)
+from config import (
+    TELEGRAM_BOT_TOKEN, REDIS_HOST, REDIS_PORT, REDIS_DB,
+    DEFAULT_GPT_VOICE, GPT_VOICES
+)
 
 # Set up Redis
 redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 
 logger = logging.getLogger(__name__)
-
+audio_conversation_pattern = "user:*:conversation"
+for key in redis_client.scan_iter(audio_conversation_pattern):
+    redis_client.delete(key)
+logger.info("Cleared existing voice conversations from Redis")
 RETRY_EXCEPTIONS = (
     openai.APIError,
     openai.APIConnectionError,
@@ -60,7 +65,7 @@ class ConversationState:
         self.save(messages)
         return messages
 
-async def make_openai_request_with_retry(messages, bot, chat_id, message_id, attempt_number=0):
+async def make_openai_request_with_retry(messages, bot, chat_id, message_id, voice_id=DEFAULT_GPT_VOICE, attempt_number=0):
     """Make OpenAI API request with enhanced retry logic"""
     try:
         async for attempt in AsyncRetrying(
@@ -81,7 +86,7 @@ async def make_openai_request_with_retry(messages, bot, chat_id, message_id, att
                 return await openai_client.chat.completions.create(
                     model="gpt-4o-audio-preview",
                     modalities=["text", "audio"],
-                    audio={"voice": "alloy", "format": "wav"},
+                    audio={"voice": voice_id, "format": "wav"},
                     messages=messages
                 )
 
@@ -110,6 +115,10 @@ def process_voice_message_task(voice_data_base64: str, user_id: int, chat_id: in
         asyncio.set_event_loop(loop)
         
         conversation = ConversationState(user_id)
+
+        # Get voice from task context or use default
+        voice_id = task_context.get('voice_id', DEFAULT_GPT_VOICE)
+        logger.info(f"[User {user_id}] Processing voice message with voice: {voice_id}")
 
         try:
             # Decode voice data
@@ -147,11 +156,11 @@ def process_voice_message_task(voice_data_base64: str, user_id: int, chat_id: in
                 ]
             })
 
-            logger.info(f"[User {user_id}] Sending request with {len(messages)} messages")
+            logger.info(f"[User {user_id}] Sending request with {len(messages)} messages using voice {voice_id}")
 
-            # Make API request
+            # Make API request with the voice_id
             completion = loop.run_until_complete(
-                make_openai_request_with_retry(messages, bot, chat_id, message_id)
+                make_openai_request_with_retry(messages, bot, chat_id, message_id, voice_id)
             )
 
             # Process response
@@ -221,6 +230,7 @@ def process_voice_message_task(voice_data_base64: str, user_id: int, chat_id: in
         raise
     finally:
         loop.close()
+        logger.info(f"[User {user_id}] Task completed")
 
 @dramatiq.actor
 def clear_conversation(user_id: int):

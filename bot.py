@@ -45,9 +45,12 @@ def create_application():
     application.add_handler(voice_handlers.voice_addition_handler)
     application.add_handler(CommandHandler("delete_custom_voice", voice_handlers.delete_custom_voice))
 
-    # Add handlers from image_handlers
-    #application.add_handler(CommandHandler("generate_image", image_handlers.generate_image))
-    #application.add_handler(CommandHandler("analyze_image", image_handlers.analyze_image))
+    # Add handlers from voice_tasks
+
+    application.add_handler(CommandHandler("list_gpt_voices", gpt_handlers.list_gpt_voices))
+    application.add_handler(CommandHandler("set_gpt_voice", gpt_handlers.set_gpt_voice))
+    application.add_handler(CommandHandler("current_gpt_voice", gpt_handlers.current_gpt_voice))
+    application.add_handler(CommandHandler("preview_gpt_voice", gpt_handlers.preview_gpt_voice))
     # Add the new dramatiq handlers
     application.add_handler(CommandHandler("generate_image", generate_image_dramatiq))
     application.add_handler(CommandHandler("analyze_image", analyze_image_dramatiq))

@@ -32,6 +32,25 @@ DEFAULT_MODEL = "claude-3-5-sonnet-20240620"
 
 DEFAULT_SYSTEM_MESSAGE = "You are a knowledgeable, efficient, and helpful AI assistant. Your goal is to provide accurate information and useful solutions to user queries. Be clear and concise in your responses, but also friendly and patient. Offer explanations when needed and ask for clarification if a query is unclear. Prioritize user safety and ethical considerations in your advice. If you don't know something, admit it honestly rather than guessing. Always strive to give the most relevant and practical assistance possible."
 ADMIN_USER_IDS = [77446618, 345073552] 
+GPT_VOICES = {
+    "alloy": "Alloy - Neutral and balanced",
+    "echo": "Echo - Mature and deep",
+    "fable": "Fable - British and proper",
+    "onyx": "Onyx - Authoritative and confident",
+    "nova": "Nova - Warm and natural",
+    "shimmer": "Shimmer - Clear and optimistic"
+}
+
+DEFAULT_GPT_VOICE = "shimmer"
+
+GPT_VOICE_PREVIEWS = {
+    "alloy": "https://openaiassets.blob.core.windows.net/$web/API/docs/audio/alloy.wav",
+    "echo": "https://openaiassets.blob.core.windows.net/$web/API/docs/audio/echo.wav",
+    "fable": "https://openaiassets.blob.core.windows.net/$web/API/docs/audio/fable.wav",
+    "onyx": "https://openaiassets.blob.core.windows.net/$web/API/docs/audio/onyx.wav",
+    "nova": "https://openaiassets.blob.core.windows.net/$web/API/docs/audio/nova.wav",
+    "shimmer": "https://openaiassets.blob.core.windows.net/$web/API/docs/audio/shimmer.wav"
+}
 FLUX_MODELS = {
     "flux-realism": "fal-ai/flux-realism",
     "flux-pro": "fal-ai/flux-pro",
