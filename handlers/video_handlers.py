@@ -55,14 +55,9 @@ async def generate_text_to_video(update: Update, context: ContextTypes.DEFAULT_T
         try:
             loop = asyncio.get_running_loop()
             handler = await loop.run_in_executor(None, lambda: fal_client.submit(
-                "fal-ai/fast-animatediff/text-to-video",
+                "fal-ai/kling-video/v1/standard/text-to-video",
                 arguments={
-                    "prompt": prompt,
-                    "num_frames": 32,
-                    "num_inference_steps": 25,
-                    "guidance_scale": 7.5,
-                    "fps": 8,
-                    "video_size": "square"
+                    "prompt": prompt
                 }
             ))
 

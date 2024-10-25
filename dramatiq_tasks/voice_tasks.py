@@ -69,44 +69,79 @@ async def make_openai_request_with_retry(messages, bot, chat_id, message_id, voi
     """Make OpenAI API request with enhanced retry logic"""
     try:
         async for attempt in AsyncRetrying(
+            retry=retry_if_exception_type(RETRY_EXCEPTIONS),
             stop=stop_after_attempt(5),
             wait=wait_exponential(multiplier=2, min=1, max=30),
-            retry=retry_if_exception_type(RETRY_EXCEPTIONS),
             before_sleep=before_sleep_log(logger, logging.INFO),
             after=after_log(logger, logging.INFO),
             reraise=True
         ):
             with attempt:
-                await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    text=f"🔄 Connecting to AI service... (Attempt {attempt_number + 1}/5)"
-                )
+                if attempt_number == 0:
+                    try:
+                        await bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            text=f"🔄 Processing... (Attempt {attempt_number + 1}/5)"
+                        )
+                    except telegram.error.BadRequest as e:
+                        if "Message is not modified" not in str(e):
+                            raise
                 
-                return await openai_client.chat.completions.create(
-                    model="gpt-4o-audio-preview",
-                    modalities=["text", "audio"],
-                    audio={"voice": voice_id, "format": "wav"},
-                    messages=messages
-                )
+                try:
+                    return await openai_client.chat.completions.create(
+                        model="gpt-4o-audio-preview",
+                        modalities=["text", "audio"],
+                        audio={"voice": voice_id, "format": "wav"},
+                        messages=messages
+                    )
+                except openai.BadRequestError as e:
+                    if "Invalid voice" in str(e):
+                        # Clear conversation and notify user
+                        logger.info(f"Voice mismatch detected, clearing conversation history")
+                        conversation = ConversationState(messages[0].get('user_id', 0))
+                        conversation.save([])  # Clear conversation history
+                        
+                        await bot.send_message(
+                            chat_id=chat_id,
+                            text="🔄 Voice conversation history has been reset to maintain consistency."
+                        )
+                        
+                        # Retry with just the current message
+                        current_message = messages[-1]  # Keep only the latest message
+                        return await openai_client.chat.completions.create(
+                            model="gpt-4o-audio-preview",
+                            modalities=["text", "audio"],
+                            audio={"voice": voice_id, "format": "wav"},
+                            messages=[current_message]
+                        )
+                    raise
 
     except tenacity.RetryError as e:
         logger.error(f"Retry limit reached: {str(e)}")
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text="❌ Failed to connect to the AI service after multiple attempts. Please try again later."
-        )
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="❌ Failed to connect to the AI service after multiple attempts. Please try again later."
+            )
+        except telegram.error.BadRequest as e:
+            if "Message is not modified" not in str(e):
+                raise
         raise
     except Exception as e:
         logger.error(f"Unexpected error occurred during retry: {str(e)}")
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text="❌ An unexpected error occurred. Please try again."
-        )
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="❌ An unexpected error occurred. Please try again."
+            )
+        except telegram.error.BadRequest as e:
+            if "Message is not modified" not in str(e):
+                raise
         raise
-
+    
 @dramatiq.actor(max_retries=3, min_backoff=10000, max_backoff=60000)
 def process_voice_message_task(voice_data_base64: str, user_id: int, chat_id: int, message_id: int, task_context: dict):
     try:
